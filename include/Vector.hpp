@@ -45,6 +45,10 @@ struct Vector<T, L, 1> {
 		std::copy(iList.begin(), iList.end(), data_.begin());
 		return *this;
 	}
+	constexpr Vector &operator=(T const &init) {
+		data_.fill(init);
+		return *this;
+	}
 	constexpr operator std::array<T, N>() const {
 		return data_;
 	}

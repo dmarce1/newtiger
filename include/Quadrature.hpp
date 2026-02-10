@@ -12,6 +12,7 @@
 #include "IO.hpp"
 #include "Legendre.hpp"
 #include "Math.hpp"
+#include "Matrix.hpp"
 
 #include <array>
 #include <cmath>
@@ -70,8 +71,8 @@ struct GaussLegendreQuadrature {
 	}
 
 private:
-	std::array<T, size()> x_{};
-	std::array<T, size()> w_{};
+	Vector<T, size()> x_{};
+	DiagonalMatrix<T, size()> w_{};
 };
 
 // deg = order - 1
@@ -139,8 +140,8 @@ struct GaussLobattoQuadrature {
 	}
 
 private:
-	std::array<T, size()> x_{};
-	std::array<T, size()> w_{};
+	Vector<T, size()> x_{};
+	DiagonalMatrix<T, size()> w_{};
 };
 
 template <typename T, int N>

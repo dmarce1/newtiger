@@ -9,6 +9,7 @@
 #define MATRIX_HPP_
 
 #include <cassert>
+#include <iostream>
 #include <ostream>
 
 #include "Math.hpp"
@@ -118,7 +119,7 @@ struct Matrix {
 		using R = decltype(U{} * T{});
 		Matrix<R, N, L> result;
 		for (int n = 0; n < N; n++) {
-			for (int l = 0; l < M; l++) {
+			for (int l = 0; l < L; l++) {
 				result[n][l] = zero<R>;
 				for (int m = 0; m < M; m++) {
 					result[n][l] += data_[n][m] * other[m][l];
@@ -150,9 +151,9 @@ struct Matrix {
 		return M;
 	}
 	static constexpr auto identity() {
-		static_assert(N == M);
-		Matrix<T, N> I{zero<T>};
-		for (int n = 0; n < N; n++) {
+		Matrix<T, N, M> I{zero<T>};
+		constexpr int L = std::min(N, M);
+		for (int n = 0; n < L; n++) {
 			I.data_[n][n] = one<T>;
 		}
 		return I;
@@ -165,40 +166,72 @@ struct Matrix {
 			return value == zero<T>;
 		}
 	}
-	friend constexpr auto inv(Matrix A) {
-		static_assert(N == M);
-		auto iA = identity();
-		for (int n = 0; n < N; n++) {
-			if (isZero(A[n][n])) {
-				for (int j = n; j < N; j++) {
-					T const Aⱼₙ = A[j][n];
-					if (!isZero(Aⱼₙ)) {
-						std::swap(iA[j], iA[n]);
-						std::swap(A[j], A[n]);
-						break;
-					}
-					assert(j != N - 1);
-				}
-			}
-			T const iAₙₙ = inv(A[n][n]);
-			iA[n] *= iAₙₙ;
-			A[n] *= iAₙₙ;
-			for (int j = n + 1; j < N; j++) {
-				T const Aⱼₙ = A[j][n];
-				if (!isZero(Aⱼₙ)) {
-					iA[j] -= Aⱼₙ * iA[n];
-					A[j] -= Aⱼₙ * A[n];
-				}
+	template <int N2, int M2>
+	constexpr auto getBlock(std::integral auto j, std::integral auto k) const {
+		Matrix<T, N2, M2> B;
+		for (int n = 0; n < N2; n++) {
+			for (int m = 0; m < M2; m++) {
+				B[n][m] = (*this)[n + j][m + k];
 			}
 		}
-		for (int n = N - 1; n >= 0; n--) {
-			for (int j = 0; j < n; j++) {
-				T const Aⱼₙ = A[j][n];
-				if (!isZero(Aⱼₙ)) {
-					iA[j] -= Aⱼₙ * iA[n];
-					A[j] -= Aⱼₙ * A[n];
+		return B;
+	}
+	template <int N2, int M2>
+	constexpr auto &setBlock(std::integral auto j, std::integral auto k, Matrix<T, N2, M2> const &B) {
+		for (int n = 0; n < N2; n++) {
+			for (int m = 0; m < M2; m++) {
+				(*this)[n + j][m + k] = B[n][m];
+			}
+		}
+		return *this;
+	}
+	friend constexpr auto inv(Matrix A) {
+		Matrix<T, M, N> iA;
+		if constexpr (N == M) {
+			iA = identity();
+			for (int n = 0; n < N; n++) {
+				if (isZero(A[n][n])) {
+					for (int j = n; j < N; j++) {
+						T const Aⱼₙ = A[j][n];
+						if (!isZero(Aⱼₙ)) {
+							std::swap(iA[j], iA[n]);
+							std::swap(A[j], A[n]);
+							break;
+						}
+						assert(j != N - 1);
+					}
+				}
+				T const iAₙₙ = inv(A[n][n]);
+				iA[n] *= iAₙₙ;
+				A[n] *= iAₙₙ;
+				for (int j = n + 1; j < N; j++) {
+					T const Aⱼₙ = A[j][n];
+					if (!isZero(Aⱼₙ)) {
+						iA[j] -= Aⱼₙ * iA[n];
+						A[j] -= Aⱼₙ * A[n];
+					}
 				}
 			}
+			for (int n = N - 1; n >= 0; n--) {
+				for (int j = 0; j < n; j++) {
+					T const Aⱼₙ = A[j][n];
+					if (!isZero(Aⱼₙ)) {
+						iA[j] -= Aⱼₙ * iA[n];
+						A[j] -= Aⱼₙ * A[n];
+					}
+				}
+			}
+		} else {
+			constexpr int L = N + M;
+			constexpr auto Iₙₙ = Matrix<T, M>::identity();
+			constexpr auto Oₘₘ = Matrix<T, M>(zero<T>);
+			Matrix<T, L> K;
+			auto const trA = transpose(A);
+			K.setBlock(0, 0, Iₙₙ);
+			K.setBlock(0, N, A);
+			K.setBlock(N, 0, trA);
+			K.setBlock(N, N, Oₘₘ);
+			iA = inv(K).template getBlock<M, N>(N, 0);
 		}
 		return iA;
 	}
@@ -266,10 +299,66 @@ constexpr auto operator*(Vector<U, N2> const &V, Matrix<T, N2, N1> const &M) {
 	return transpose(M) * V;
 }
 
+template <typename T, int N>
+struct DiagonalMatrix : public Vector<T, N> {
+	operator Matrix<T, N>() const {
+		Matrix<T, N> D{};
+		for(int n = 0; n < N; n++) {
+			D[n][n] = (*this)[n];
+		}
+		return D;
+	}
+	auto &operator*=(DiagonalMatrix<T, N> const &other) {
+		*this = *this * other;
+		return *this;
+	}
+	template <typename U>
+	auto operator*(DiagonalMatrix<U, N> const &other) const {
+		using R = decltype(U{} * T{});
+		DiagonalMatrix<R, N> result;
+		for (int n = 0; n < N; n++) {
+			result[n] = (this)[n] * other[n];
+		}
+		return result;
+	}
+	template <typename U, int M>
+	friend auto operator*(Matrix<U, M, N> const &A, DiagonalMatrix const &D) {
+		using R = decltype(U{} * T{});
+		Matrix<R, M, N> AD;
+		for (int n = 0; n < N; n++) {
+			T const d = D[n];
+			for (int m = 0; m < M; m++) {
+				AD[m][n] = A[m][n] * d;
+			}
+		}
+		return AD;
+	}
+	template <typename U, int M>
+	friend auto operator*(DiagonalMatrix const &D, Matrix<U, N, M> const &A) {
+		using R = decltype(T{} * U{});
+		Matrix<R, N, M> DA;
+		for (int n = 0; n < N; n++) {
+			T const d = D[n];
+			for (int m = 0; m < M; m++) {
+				DA[n][m] = d * A[n][m] ;
+			}
+		}
+		return DA;
+	}
+	friend auto inv(DiagonalMatrix const &D) {
+		using R = decltype(inv(T{1}));
+		DiagonalMatrix<R, N> iD;
+		for (int n = 0; n < N; n++) {
+			iD[n] = inv(D[n]);
+		}
+		return iD;
+	}
+};
+
 template <typename T, int N, int M>
 std::ostream &operator<<(std::ostream &os, Matrix<T, N, M> const &A) {
 	using MatrixType = Matrix<T, N, M>;
-	std::array<std::array<std::string, N>, M> strs;
+	std::array<std::array<std::string, M>, N> strs;
 	size_t maxLen = 0;
 	for (int n = 0; n < N; n++) {
 		for (int m = 0; m < M; m++) {
