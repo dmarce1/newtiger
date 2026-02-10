@@ -18,17 +18,17 @@
 #include <numeric>
 #include <ostream>
 
-template <typename, int, int = 1>
+template <typename, int>
 struct Vector;
 
 template <typename T>
 struct IsVector : std::false_type {};
 
-template <typename T, int N, int D>
-struct IsVector<Vector<T, N, D>> : std::true_type {};
+template <typename T, int N>
+struct IsVector<Vector<T, N>> : std::true_type {};
 
 template <typename T, int L>
-struct Vector<T, L, 1> {
+struct Vector {
 	constexpr static int N = L;
 	constexpr Vector() = default;
 	constexpr Vector(T ival) {
@@ -117,6 +117,12 @@ struct Vector<T, L, 1> {
 		}
 		return result;
 	}
+	constexpr auto data()  const{
+		return data_.data();
+	}
+	constexpr auto data() {
+		return data_.data();
+	}
 	constexpr auto begin() const {
 		return data_.cbegin();
 	}
@@ -159,102 +165,5 @@ struct Vector<T, L, 1> {
 private:
 	std::array<T, N> data_{};
 };
-
-template<typename T, int N, int D>
-constexpr Vector<T, N, D> fma(Scalar auto const& a, Vector<T, N, D> const& b, Vector<T, N, D> c) {
-	for(int i = 0; i < N; i++) {
-		c[i] += a * b[i];
-	}
-	return c;
-}
-
-
-template <typename T, int L, int D>
-struct Vector : public Vector<Vector<T, L, D - 1>, L> {
-	using base_type = Vector<Vector<T, L, D - 1>, L>;
-	constexpr Vector() = default;
-	constexpr Vector(base_type const &other) :
-		base_type(other) {
-	}
-	template<std::integral Int>
-	T &operator()(std::array<Int, D> const &nml) {
-		T *ptr = reinterpret_cast<T *>(this);
-		return ptr[flatIndex(nml)];
-	}
-	template<std::integral Int>
-	T operator()(std::array<Int, D> const &nml) const {
-		T const *ptr = reinterpret_cast<T const *>(this);
-		return ptr[flatIndex(nml)];
-	}
-
-private:
-	static constexpr int flatIndex(std::array<int, D> const &xyz) {
-		int index = 0;
-		for (int d = 0; d < D; d++) {
-			index = L * index + xyz[d];
-		}
-		return index;
-	}
-};
-
-//template <typename T, int L, int D>
-//struct TriangularVector : public Vector<T, binco(L + D - 1, D)> {
-//	static constexpr int size() {
-//		return binco(L + D - 1, D);
-//	}
-//	using base_type = Vector<Vector<T, size()>, L>;
-//	constexpr TriangularVector() = default;
-//	constexpr TriangularVector(base_type const &other) :
-//		base_type(other) {
-//	}
-//	T &operator()(std::array<int, D> const &nml) {
-//		T *ptr = reinterpret_cast<T *>(this);
-//		return ptr[flatIndex(nml)];
-//	}
-//	T operator()(std::array<int, D> const &nml) const {
-//		T const *ptr = reinterpret_cast<T const *>(this);
-//		return ptr[flatIndex(nml)];
-//	}
-//	template<int I>
-//	auto getSubvector() {
-//		
-//	}
-//
-//private:
-//	static constexpr int flatIndex(std::array<int, D> nml) {
-//		std::reverse(nml.begin(), nml.end());
-//		for (int d = 0; d + 1 < D; d++) {
-//			nml[d + 1] += nml[d];
-//		}
-//		int index = 0;
-//		for (int d = 0; d < D; d++) {
-//			index += binco(nml[d] + d, d + 1);
-//		}
-//		return index;
-//	}
-//};
-//
-template <typename TA, typename TB>
-constexpr auto cross(Vector<TA, 3> const &A, Vector<TB, 3> const &B) {
-	using TC = decltype(TA{} * TB{});
-	Vector<TC, 3> C;
-	C[0] = A[1] * B[2] - A[2] * B[1];
-	C[1] = A[2] * B[0] - A[0] * B[2];
-	C[2] = A[0] * B[1] - A[1] * B[0];
-	return C;
-}
-
-template <typename T, int N>
-std::ostream &operator<<(std::ostream &os, Vector<T, N> const &A) {
-	os << "(";
-	for (int n = 0; n < N; n++) {
-		if (n) {
-			os << ", ";
-		}
-		os << A[n];
-	}
-	os << ")";
-	return os;
-}
 
 #endif /* VECTOR_HPP_ */

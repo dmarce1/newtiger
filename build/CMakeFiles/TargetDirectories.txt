@@ -1,0 +1,7 @@
+/home/dmarce1/workspace/newtiger/build/CMakeFiles/newtiger.dir
+/home/dmarce1/workspace/newtiger/build/CMakeFiles/edit_cache.dir
+/home/dmarce1/workspace/newtiger/build/CMakeFiles/rebuild_cache.dir
+/home/dmarce1/workspace/newtiger/build/CMakeFiles/list_install_components.dir
+/home/dmarce1/workspace/newtiger/build/CMakeFiles/install.dir
+/home/dmarce1/workspace/newtiger/build/CMakeFiles/install/local.dir
+/home/dmarce1/workspace/newtiger/build/CMakeFiles/install/strip.dir

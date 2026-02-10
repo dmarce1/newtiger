@@ -1,0 +1,48 @@
+# Start from LLVM (good spacing defaults)
+BasedOnStyle: LLVM
+
+# ==== INDENTATION ====
+UseTab: Always
+IndentWidth: 4
+TabWidth: 4
+
+# ==== BRACES ====
+# Match your K&R brace positioning with braces always kept.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterStruct: false
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterControlStatement: false
+  AfterUnion: false
+  BeforeElse: false
+  BeforeCatch: false
+  IndentBraces: false
+
+# ==== CONTROL STRUCTURE BRACES (your explicit preference) ====
+# Forces: if (...) { ... } even if single-line
+AlwaysBreakAfterReturnType: None
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: false
+AllowShortLambdasOnASingleLine: None
+
+# ==== TEMPLATE DECLARATIONS — THE KEY SETTING ====
+AlwaysBreakTemplateDeclarations: Yes
+
+# ==== CONSTRUCTOR INITIALIZERS ====
+PackConstructorInitializers: NextLineOnly
+BreakConstructorInitializers: AfterColon
+
+# ==== ACCESS MODIFIERS ====
+IndentAccessModifiers: false
+AccessModifierOffset: -4
+
+# ==== MISC ====
+SpaceBeforeParens: ControlStatements
+Cpp11BracedListStyle: true
+ColumnLimit: 140

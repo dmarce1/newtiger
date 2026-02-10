@@ -1,0 +1,7 @@
+
+
+namespace cfg {
+	using Real = @REAL@;
+	constexpr int dimCount = @NDIM@;
+}
+

@@ -32,6 +32,7 @@ add_hpx_executable(
     include/Math.hpp
     include/Matrix.hpp
     include/Quadrature.hpp
+    include/StateFactory.hpp
    	include/Units.hpp
     include/Vector.hpp
 )
