@@ -123,14 +123,6 @@ DEFINE_UNIT(+3, +0, +0, +0, cm3, 1.0);
 DEFINE_UNIT(+1, +1, -2, +0, dyne, 1.0);
 DEFINE_UNIT(+2, +1, -2, +0, erg, 1.0);
 
-namespace PhysicalConstants {
-inline constexpr auto c = 2.99792458e10_cm / 1_s;
-inline constexpr auto G = 6.67430e-8_cm3 / (1_g * 1_s2);
-inline constexpr auto σ = 5.670374419e-5_erg / (1_cm2 * 1_s * 1_K4);
-inline constexpr auto kB = 1.380649e-16_erg / 1_K;
-inline constexpr auto NA = 6.02214076e23;
-inline constexpr auto π = 3.141592653589793238463;
-} // namespace PhysicalConstants
 
 
 #endif /* UNITS_HPP_ */

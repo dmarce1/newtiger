@@ -66,11 +66,11 @@ struct Vector {
 		*this = *this - other;
 		return *this;
 	}
-	constexpr Vector &operator*=(Scalar auto const &scalar) {
+	constexpr Vector &operator*=(T const &scalar) {
 		*this = *this * scalar;
 		return *this;
 	}
-	constexpr Vector &operator/=(Scalar auto const &scalar) {
+	constexpr Vector &operator/=(T const &scalar) {
 		*this = *this / scalar;
 		return *this;
 	}
@@ -98,7 +98,7 @@ struct Vector {
 		}
 		return result;
 	}
-	constexpr auto operator*(Scalar auto const &scale) const {
+	constexpr Vector operator*(T const &scale) const {
 		using R = decltype(scale * T{});
 		Vector<R, N> result;
 		for (int i = 0; i < N; i++) {
@@ -106,58 +106,57 @@ struct Vector {
 		}
 		return result;
 	}
-	constexpr auto operator/(Scalar auto const &scalar) const {
+	constexpr Vector operator/(T const &scalar) const {
 		return (*this) * inv(scalar);
 	}
-	template <typename U>
-	constexpr auto dot(Vector<U, N> const &other) const {
-		auto result = data_[0] * other.data_[0];
+	constexpr T dot(Vector const &other) const {
+		T result = data_[0] * other.data_[0];
 		for (int i = 1; i < N; i++) {
 			result += data_[i] * other.data_[i];
 		}
 		return result;
 	}
-	constexpr auto data()  const{
+	constexpr T const *data() const {
 		return data_.data();
 	}
-	constexpr auto data() {
+	constexpr T *data() {
 		return data_.data();
 	}
-	constexpr auto begin() const {
+	constexpr std::array<T, N>::const_iterator begin() const {
 		return data_.cbegin();
 	}
-	constexpr auto end() const {
+	constexpr std::array<T, N>::const_iterator end() const {
 		return data_.cend();
 	}
-	constexpr auto begin() {
+	constexpr std::array<T, N>::iterator begin() {
 		return data_.begin();
 	}
-	constexpr auto end() {
+	constexpr std::array<T, N>::iterator end() {
 		return data_.end();
 	}
-	static constexpr auto size() {
+	static constexpr size_t size() {
 		return L;
 	}
-	static constexpr auto unit(int i) {
+	static constexpr Vector unit(int i) {
 		Vector u{};
 		u[i] = one<T>;
 		return u;
 	}
-	friend constexpr auto operator*(Scalar auto const &scalar, Vector const &vector) {
+	friend constexpr Vector operator*(T const &scalar, Vector const &vector) {
 		return vector * scalar;
 	}
-	friend constexpr auto abs(Vector const &vector) {
+	friend constexpr Vector abs(Vector const &vector) {
 		using std::sqrt;
 		return sqrt(vector.dot(vector));
 	}
-	friend constexpr auto normalize(Vector const &vector) {
+	friend constexpr Vector normalize(Vector const &vector) {
 		return vector / abs(vector);
 	}
-	template<std::integral Int>
+	template <std::integral Int>
 	T &operator()(std::array<Int, 1> const &xyz) {
 		return data_[xyz[0]];
 	}
-	template<std::integral Int>
+	template <std::integral Int>
 	T operator()(std::array<Int, 1> const &xyz) const {
 		return data_[xyz[0]];
 	}

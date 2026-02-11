@@ -8,10 +8,10 @@
 /*AαΑBβΒGγΓDδΔEεΕZζΖHηΗThθΘIιΙKκΚLλΛMμΜNνΝXξΞOοΟPπΠRρΡSσΣTτΤYυΥFφΦChχΧPsψΨOωΩ*/
 /*₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵨ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁱⁿᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᵅᵝᵞᵟᵋᵠᵡ*/
 
-#include "Gas.hpp"
-#include "Vector.hpp"
 #include <config.hpp>
-#include <valarray>
+
+#include "SimdVector.hpp"
+#include "Vector.hpp"
 
 #ifndef STATE_DATA
 #error "STATE_DATA not defined"
@@ -91,44 +91,119 @@ struct State {
 #undef VECTOR
 };
 
+template<size_t N>
 struct SoA {
-#define SCALAR(arg) std::valarray<Real> arg;
-#define VECTOR(arg) Vector<std::valarray<Real>, dimCount> arg;
+#define SCALAR(arg) SimdVector<Real, N> arg;
+#define VECTOR(arg) Vector<SimdVector<Real, N>, dimCount> arg;
 	STATE_DATA
 #undef SCALAR
 #undef VECTOR
-	size_t size_;
 	SoA() = default;
-	SoA(size_t size) {
-		resize(size);
+	constexpr size_t size() const {
+		return N;
 	}
-	size_t size() const {
-		return size_;
-	}
-	void resize(size_t size) {
-		size_ = size;
-#define SCALAR(arg) arg.resize(size);
-#define VECTOR(arg)       \
-	for (auto& x : arg) { \
-		x.resize(size);   \
+	SoA cshift(int shift) const {
+		SoA result;
+#define SCALAR(arg) result. arg = arg .cshift(shift);
+#define VECTOR(arg)                      \
+	for (int d = 0; d < dimCount; d++) { \
+		result. arg [d] = arg [d].cshift(shift);  \
 	}
 		STATE_DATA
+		return result;
 #undef SCALAR
 #undef VECTOR
 	}
+	SoA operator-(SoA const& other) const {
+		SoA result;
+#define SCALAR(arg) result. arg = arg - other. arg;
+#define VECTOR(arg)                                  \
+	for (int d = 0; d < dimCount; d++) {             \
+		result. arg [d] = arg [d] - other. arg [d];  \
+	}
+		STATE_DATA
+		return result;
+#undef SCALAR
+#undef VECTOR
+	}
+	SoA operator+(SoA const &other) const {
+		SoA result;
+#define SCALAR(arg) result.arg = arg + other.arg;
+#define VECTOR(arg)                                                                                                                        \
+		for (int d = 0; d < dimCount; d++) {                                                                                                   \
+			result.arg[d] = arg[d] + other.arg[d];                                                                                             \
+		}
+		STATE_DATA
+		return result;
+	#undef SCALAR
+	#undef VECTOR
+	}
+	SoA operator*(SimdVector<Real, N> const &other) const {
+		SoA result;
+#define SCALAR(arg) result.arg = arg * other;
+#define VECTOR(arg)                                                                                                                        \
+		for (int d = 0; d < dimCount; d++) {                                                                                               \
+			result.arg[d] = arg[d] * other;                                                                                         \
+		}
+		STATE_DATA
+		return result;
+#undef SCALAR
+#undef VECTOR
+	}
+	SoA operator*(Real scalar) const {
+		SoA result;
+#define SCALAR(arg) result.arg = arg * scalar;
+#define VECTOR(arg)                                                                                                                        \
+		for (int d = 0; d < dimCount; d++) {                                                                                                   \
+			result.arg[d] = arg[d] * scalar;                                                                                             \
+		}
+		STATE_DATA
+		return result;
+#undef SCALAR
+#undef VECTOR
+	}
+	SoA &operator+=(SoA const &other) {
+#define SCALAR(arg) arg += other.arg;
+#define VECTOR(arg)                                                                                                                        \
+		for (int d = 0; d < dimCount; d++) {                                                                                                   \
+			arg[d] += other.arg[d];                                                                                                            \
+		}
+		STATE_DATA
+		return *this;
+#undef SCALAR
+#undef VECTOR
+	}
+	SoA &operator-=(SoA const &other) {
+#define SCALAR(arg) arg -= other.arg;
+#define VECTOR(arg)                                                                                                                        \
+		for (int d = 0; d < dimCount; d++) {                                                                                                   \
+			arg[d] -= other.arg[d];                                                                                                            \
+		}
+		STATE_DATA
+		return *this;
+#undef SCALAR
+#undef VECTOR
+	}
+	friend SoA operator*(Real scalar, SoA const &soa) {
+		return soa * scalar;
+	}
+	friend SoA operator*(SimdVector<Real, N> scalar, SoA const &soa) {
+		return soa * scalar;
+	}
 };
 
-using AoS = std::valarray<State>;
+template<size_t size>
+using AoS = std::array<State, size>;
 
-SoA aos2soa(AoS const& aos) {
-	SoA soa(aos.size());
-	size_t const count = aos.size();
+template<size_t N>
+SoA<N> aos2soa(AoS<N> const& aos) {
+	SoA<N> soa;
 #define SCALAR(arg)                     \
-	for(size_t i = 0; i < count; i++) { \
+	for(size_t i = 0; i < N; i++) { \
 		soa. arg [i] = aos[i]. arg ;    \
 	}
 #define VECTOR(arg)                            \
-	for(size_t i = 0; i < count; i++) {        \
+	for(size_t i = 0; i < N; i++) {        \
 		for(size_t d = 0; d < dimCount; d++) { \
 			soa. arg [d][i] = aos[i]. arg [d]; \
 		}                                      \
@@ -139,15 +214,15 @@ SoA aos2soa(AoS const& aos) {
 	return soa;
 }
 
-AoS soa2aos(SoA const& soa) {
-	AoS aos(soa.size());
-	size_t const count = aos.size();
+template<size_t N>
+AoS<N> soa2aos(SoA<N> const& soa) {
+	AoS<N> aos;
 #define SCALAR(arg)                     \
-	for(size_t i = 0; i < count; i++) { \
+	for(size_t i = 0; i < N; i++) { \
 		aos[i]. arg = soa. arg [i] ;    \
 	}
 #define VECTOR(arg)                            \
-	for(size_t i = 0; i < count; i++) {        \
+	for(size_t i = 0; i < N; i++) {        \
 		for(size_t d = 0; d < dimCount; d++) { \
 			aos[i]. arg [d] = soa. arg [d][i]; \
 		}                                      \

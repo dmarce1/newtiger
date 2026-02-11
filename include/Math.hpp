@@ -8,6 +8,7 @@
 #ifndef MATH_HPP_
 #define MATH_HPP_
 
+#include <config.hpp>
 #include "Constants.hpp"
 
 #include <cmath>
@@ -25,7 +26,6 @@ struct IsScalar<T> : std::true_type {};
 template <typename T>
 concept Scalar = IsScalar<T>::value;
 
-
 template <typename T>
 constexpr auto sqr(T const &v) {
 	return v * v;
@@ -33,7 +33,7 @@ constexpr auto sqr(T const &v) {
 
 template <typename T>
 constexpr auto inv(T const &v) {
-	return one<T> / v;
+	return 1 / v;
 }
 
 template <typename T>
