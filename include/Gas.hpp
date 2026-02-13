@@ -8,124 +8,108 @@
 #ifndef GAS_HPP_
 #define GAS_HPP_
 
-#include <cassert>
-#include <cmath>
-/*AαΑBβΒGγΓDδΔEεΕZζΖHηΗThθΘIιΙKκΚLλΛMμΜNνΝXξΞOοΟPπΠRρΡSσΣTτΤYυΥFφΦChχΧPsψΨOωΩ*/
-/*₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵨ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁱⁿᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᵅᵝᵞᵟᵋᵠᵡ*/
+#include <config.hpp>
 
-#define STATE_NAME Gas
-	
-#define STATE_DATA \
-	SCALAR(ρ) \
-	VECTOR(s) \
-	SCALAR(E) \
-	SCALAR(τ) 
-	
-#define STATE_CONSTANTS \
-	CONSTANT(Γ, 1.4)
-	
-#include "StateFactory.hpp"
+#include <array>
+#include <span>
 
-using namespace config;
+#include "Vector.hpp"
 
-using ConservedGasState  = Gas::State;
+namespace Gas {
+using namespace Config;
 
-struct PrimitiveGasState {
-	Real ρ;
-	Vector<Real, dimCount> v;
-	Real p;
+template <int N>
+struct State {
+	static constexpr int fieldCount() {
+		return dimCount + 3;
+	}
+	static constexpr int size() {
+		return N;
+	}
+	State() {
+		size_t index = 0;
+		for (int d = 0; d < dimCount; d++) {
+			momentumDensity[d] = std::span<Real>(state_.begin() + index, N);
+			index += N;
+		}
+		massDensity = std::span<Real>(state_.begin() + index, N);
+		index += N;
+		energyDensity = std::span<Real>(state_.begin() + index, N);
+		index += N;
+		entropyTracer = std::span<Real>(state_.begin() + index, N);
+		index += N;
+	}
+	std::array<Real, N> signalSpeed(int direction) const {
+		std::array<Real, N> signalSpeed = Real(0);
+		for (int n = 0; n < N; n++) {
+			Real const invMassDensity = Real(1) / massDensity[n];
+			Real const halfInvMassDensity = Real(0.5) * invMassDensity;
+			Real kineticEnergyDensity{};
+			Real velocity = invMassDensity * momentumDensity[direction][n];
+			for (int d = 0; d < dimCount; d++) {
+				kineticEnergyDensity += halfInvMassDensity * momentumDensity[d][n];
+			}
+			Real internalEnergyDensity = energyDensity[n] - kineticEnergyDensity;
+			internalEnergyDensity = (internalEnergyDensity > dualEngeryPressureSwitch * energyDensity[n])
+										? internalEnergyDensity
+										: pow(entropyTracer[n], fluidGamma);
+			Real const pressure = (fluidGamma - 1) * internalEnergyDensity;
+			Real const soundSpeed = sqrt(fluidGamma * pressure * invMassDensity);
+			signalSpeed = std::max(std::abs(velocity + soundSpeed), std::abs(velocity - soundSpeed));
+		}
+		return signalSpeed;
+	}
+	auto flux(int direction) const {
+		State flux;
+		for (int n = 0; n < N; n++) {
+			Real const invMassDensity = Real(1) / massDensity[n];
+			Real const halfInvMassDensity = Real(0.5) * invMassDensity;
+			Real kineticEnergyDensity{};
+			Real velocity = invMassDensity * momentumDensity[direction][n];
+			for (int d = 0; d < dimCount; d++) {
+				kineticEnergyDensity += halfInvMassDensity * momentumDensity[d][n];
+			}
+			Real internalEnergyDensity = energyDensity[n] - kineticEnergyDensity;
+			internalEnergyDensity = (internalEnergyDensity > dualEngeryPressureSwitch * energyDensity[n])
+										? internalEnergyDensity
+										: pow(entropyTracer[n], fluidGamma);
+			Real const pressure = (fluidGamma - 1) * internalEnergyDensity;
+			flux.massDensity[n] = momentumDensity[direction][n];
+			for (int d = 0; d < dimCount; d++) {
+				flux.momentumDensity[d][n] = velocity * momentumDensity[d][n];
+			}
+			flux.momentumDensity[direction][n] += pressure;
+			flux.energyDensity[n] = velocity * (energyDensity[n] + pressure);
+			flux.entropyTracer[n] = velocity * entropyTracer[n];
+		}
+		return flux;
+	}
+	friend State solveRiemannProblem(State const &ul, State const &ur, int direction) {
+		State flux;
+		auto const leftSignalSpeed = ul.signalSpeed(direction);
+		auto const rightSignalSpeed = ur.signalSpeed(direction);
+		auto const leftFlux = ul.flux(direction);
+		auto const rightFlux = ur.flux(direction);
+		int i = 0;
+		for (int n = 0; n < N; n++) {
+			auto const maximumSignalSpeed = std::max(leftSignalSpeed[n], rightSignalSpeed[n]);
+			for (int f = 0; f < fieldCount(); f++) {
+				flux.state_[i] = Real(0.5) * (leftFlux.state_[i] + rightFlux.state_[i]);
+				flux.state_[i] += Real(0.5) * maximumSignalSpeed * (ul.state_[i] - ur.state_[i]);
+				i++;
+			}
+		}
+		return flux;
+	}
+
+private:
+	std::array<Real, fieldCount() * size()> state_;
+	std::array<std::span<Real>, dimCount> momentumDensity;
+	std::span<Real> massDensity;
+	std::span<Real> energyDensity;
+	std::span<Real> entropyTracer;
 };
 
-
-PrimitiveGasState con2prim(ConservedGasState const &con) {
-	using namespace Gas;
-	using std::pow;
-	PrimitiveGasState prim;
-	constexpr Real zero = Real(0);
-	constexpr Real one = Real(1);
-	constexpr Real half = inv(Real(2));
-	constexpr Real δ₁ = inv(Real(1000));
-	auto const &[_, s, E, τ] = con;
-	auto &[ρ, v, p] = prim;
-	ρ = con.ρ;
-	assert(ρ > zero);
-	assert(τ > zero);
-	auto const iρ = inv(ρ);
-	v = iρ * s;
-	auto const eₖ = half * v.dot(s);
-//	auto const eᵢ = E - eₖ;
-	auto const eᵢ = ((one - δ₁) * E > eₖ) ? (E - eₖ) : pow(τ, Γ);
-	assert(eᵢ > zero);
-	p = (Γ - 1) * eᵢ;
-	return prim;
-}
-
-
-ConservedGasState prim2con(PrimitiveGasState const &prim) {
-	using namespace Gas;
-	ConservedGasState con;
-	constexpr Real half = inv(Real(2));
-	auto const &[_, v, p] = prim;
-	auto &[ρ, s, E, τ] = con;
-	ρ = prim.ρ;
-	s = ρ * v;
-	auto const eₖ = half * s.dot(v);
-	auto const eᵢ = p / (Γ - 1);
-	E = eₖ + eᵢ;
-	τ = pow(eᵢ, inv(Γ));
-	return con;
-}
-
-
-ConservedGasState prim2flux(PrimitiveGasState const &prim, int n) {
-	using namespace Gas;
-	ConservedGasState F;
-	constexpr Real half = inv(Real(2));
-	auto const &[ρ, v, p] = prim;
-	auto const vₙ = v[n];
-	auto const eᵢ = p / (Γ - 1);
-	auto const eₖ = half * ρ * v.dot(v);
-	F.ρ = vₙ * ρ;
-	F.s = vₙ * ρ * v;
-	F.s[n] += p; 
-	F.E = vₙ * (eₖ + Γ * eᵢ);
-	F.τ = vₙ * pow(eᵢ, inv(Γ));
-	return F;
-}
-
-
-Real soundSpeed(PrimitiveGasState const &prim) {
-	using namespace Gas;
-	ConservedGasState f;
-	auto const &[ρ, _, p] = prim;
-	auto const cₛ = sqrt(Γ * p / ρ);
-	return cₛ;
-}
-
-
-Real maxSignalSpeed(PrimitiveGasState const &prim, int n) {
-	using std::abs;
-	auto const &[ρ, v, p] = prim;
-	auto const vₙ = abs(v[n]);
-	auto const cₛ = soundSpeed(prim);
-	auto const a = cₛ + vₙ;
-	return a;
-}
-
-
-ConservedGasState con2flux(ConservedGasState const &Ul, ConservedGasState const &Ur, int n) {
-	using std::max;
-	ConservedGasState F;
-	constexpr Real half = inv(Real(2));
-	auto const Vl = con2prim(Ul);
-	auto const Fl = prim2flux(Vl, n);
-	auto const al = maxSignalSpeed(Vl, n);
-	auto const Vr = con2prim(Ur);
-	auto const Fr = prim2flux(Vr, n);
-	auto const ar = maxSignalSpeed(Vr, n);
-	auto const a = max(al, ar);
-	F = half * ((Fl + Fr) - a * (Ur - Ul));
-	return F;
-}
+} // namespace Gas
 
 #endif /* GAS_HPP_ */

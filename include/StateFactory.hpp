@@ -118,7 +118,8 @@ struct SoA {
 	}
 };
 
-using AoS = std::valarray<State>;
+template<int N>
+using AoS = std::array<State, N>;
 
 SoA aos2soa(AoS const& aos) {
 	SoA soa(aos.size());
