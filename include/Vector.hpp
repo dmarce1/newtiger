@@ -8,54 +8,42 @@
 #ifndef VECTOR_HPP_
 #define VECTOR_HPP_
 
-#include "Constants.hpp"
-#include "Math.hpp"
-
 #include <array>
 #include <cmath>
-#include <concepts>
-#include <functional>
-#include <numeric>
-#include <ostream>
 
-template <typename, int>
-struct Vector;
+#include "Real.hpp"
 
-template <typename T>
-struct IsVector : std::false_type {};
+template <Integer D>
+class Vector {
+	std::array<Real, D> data_{};
 
-template <typename T, int N>
-struct IsVector<Vector<T, N>> : std::true_type {};
-
-template <typename T, int L>
-struct Vector {
-	constexpr static int N = L;
+public:
 	constexpr Vector() = default;
-	constexpr Vector(T ival) {
+	constexpr Vector(Real ival) {
 		data_.fill(ival);
 	}
-	constexpr Vector(std::initializer_list<T> &&iList) {
+	constexpr Vector(std::initializer_list<Real> &&iList) {
 		*this = std::move(iList);
 	}
-	constexpr Vector(std::array<T, L> const &arr) {
+	constexpr Vector(std::array<Real, D> const &arr) {
 		data_ = arr;
 	}
-	constexpr Vector &operator=(std::initializer_list<T> const &iList) {
-		data_.fill(zero<T>);
+	constexpr Vector &operator=(std::initializer_list<Real> const &iList) {
+		data_.fill(0_R);
 		std::copy(iList.begin(), iList.end(), data_.begin());
 		return *this;
 	}
-	constexpr Vector &operator=(T const &init) {
+	constexpr Vector &operator=(Real const &init) {
 		data_.fill(init);
 		return *this;
 	}
-	constexpr operator std::array<T, N>() const {
+	constexpr operator std::array<Real, D>() const {
 		return data_;
 	}
-	constexpr T const &operator[](std::integral auto i) const {
+	constexpr Real const &operator[](Integer i) const {
 		return data_[i];
 	}
-	constexpr T &operator[](std::integral auto i) {
+	constexpr Real &operator[](Integer i) {
 		return data_[i];
 	}
 	constexpr Vector &operator+=(Vector const &other) {
@@ -66,11 +54,11 @@ struct Vector {
 		*this = *this - other;
 		return *this;
 	}
-	constexpr Vector &operator*=(Scalar auto const &scalar) {
+	constexpr Vector &operator*=(Real const &scalar) {
 		*this = *this * scalar;
 		return *this;
 	}
-	constexpr Vector &operator/=(Scalar auto const &scalar) {
+	constexpr Vector &operator/=(Real const &scalar) {
 		*this = *this / scalar;
 		return *this;
 	}
@@ -79,45 +67,43 @@ struct Vector {
 	}
 	constexpr Vector operator-() const {
 		Vector result;
-		for (int i = 0; i < N; i++) {
+		for (Integer i = 0; i < D; i++) {
 			result[i] = -data_[i];
 		}
 		return result;
 	}
 	constexpr Vector operator+(Vector const &other) const {
 		Vector result;
-		for (int i = 0; i < N; i++) {
+		for (Integer i = 0; i < D; i++) {
 			result[i] = data_[i] + other.data_[i];
 		}
 		return result;
 	}
 	constexpr Vector operator-(Vector const &other) const {
 		Vector result;
-		for (int i = 0; i < N; i++) {
+		for (Integer i = 0; i < D; i++) {
 			result[i] = data_[i] - other.data_[i];
 		}
 		return result;
 	}
-	constexpr auto operator*(Scalar auto const &scale) const {
-		using R = decltype(scale * T{});
-		Vector<R, N> result;
-		for (int i = 0; i < N; i++) {
+	constexpr auto operator*(Real const &scale) const {
+		Vector result;
+		for (Integer i = 0; i < D; i++) {
 			result[i] = scale * data_[i];
 		}
 		return result;
 	}
-	constexpr auto operator/(Scalar auto const &scalar) const {
+	constexpr auto operator/(Real const &scalar) const {
 		return (*this) * inv(scalar);
 	}
-	template <typename U>
-	constexpr auto dot(Vector<U, N> const &other) const {
-		auto result = data_[0] * other.data_[0];
-		for (int i = 1; i < N; i++) {
+	constexpr auto dot(Vector const &other) const {
+		Real result = 0_R;
+		for (Integer i = 0; i < D; i++) {
 			result += data_[i] * other.data_[i];
 		}
 		return result;
 	}
-	constexpr auto data()  const{
+	constexpr auto data() const {
 		return data_.data();
 	}
 	constexpr auto data() {
@@ -136,14 +122,14 @@ struct Vector {
 		return data_.end();
 	}
 	static constexpr auto size() {
-		return L;
+		return D;
 	}
-	static constexpr auto unit(int i) {
+	static constexpr auto unit(Integer i) {
 		Vector u{};
-		u[i] = one<T>;
+		u[i] = 1_R;
 		return u;
 	}
-	friend constexpr auto operator*(Scalar auto const &scalar, Vector const &vector) {
+	friend constexpr auto operator*(Real const &scalar, Vector const &vector) {
 		return vector * scalar;
 	}
 	friend constexpr auto abs(Vector const &vector) {
@@ -153,17 +139,17 @@ struct Vector {
 	friend constexpr auto normalize(Vector const &vector) {
 		return vector / abs(vector);
 	}
-	template<std::integral Int>
-	T &operator()(std::array<Int, 1> const &xyz) {
-		return data_[xyz[0]];
-	}
-	template<std::integral Int>
-	T operator()(std::array<Int, 1> const &xyz) const {
-		return data_[xyz[0]];
-	}
-
-private:
-	std::array<T, N> data_{};
 };
+
+
+template <Integer D>
+inline constexpr auto minmod(Vector<D> const &a, Vector<D> const &b, Real θ) {
+	Vector<D> c;
+	for (Integer d = 0; d < D; d++) {
+		c[d] = minmod(θ * minmod(a[d], b[d]), 0.5_R * (a[d] + b[d]));
+	}
+	return c;
+}
+
 
 #endif /* VECTOR_HPP_ */

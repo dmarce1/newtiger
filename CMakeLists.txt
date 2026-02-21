@@ -22,20 +22,12 @@ add_hpx_executable(
   SOURCES
     src/main.cpp
   HEADERS
-    include/config.hpp
-    include/Basis.hpp
-    include/Constants.hpp
-    include/Gas.hpp
-    include/Interval.hpp
-    include/IO.hpp
-    include/Legendre.hpp
-    include/Math.hpp
-    include/Matrix.hpp
-    include/Quadrature.hpp
-    include/SubArray.hpp
-    include/StateFactory.hpp
-   	include/Units.hpp
-    include/Vector.hpp
+  	include/Box.hpp
+  	include/Grid.hpp
+  	include/Integer.hpp
+  	include/Real.hpp
+  	include/State.hpp
+  	include/Vector.hpp
 )
 #target_link_libraries(yourTarget PRIVATE SILO::silo)
 
