@@ -11,6 +11,7 @@
 /*AαΑBβΒGγΓDδΔEεΕZζΖHηΗThθΘIιΙKκΚLλΛMμΜNνΝXξΞOοΟPπΠRρΡSσΣTτΤYυΥFφΦChχΧPsψΨOωΩ*/
 /*₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵨ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁱⁿᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᵅᵝᵞᵟᵋᵠᵡ*/
 
+#include <string>
 #include <tuple>
 
 #include "Real.hpp"
@@ -19,18 +20,38 @@
 template <Integer D>
 struct State : Vector<2 + D> {
 	using base_type = Vector<2 + D>;
-	static constexpr Real Γ = 5_R / 3_R;
 	static constexpr Integer size() {
 		return D + 2;
 	}
+	static constexpr Real Γ = 5_R / 3_R;
+	static auto getFieldNames() {
+		static auto names = []() {
+			static std::array<std::string, 2 + D> strings;
+			strings[0] = "density";
+			strings[1] = "energy";
+			for (Integer d = 0; d < D; d++) {
+				strings[d + 2] = std::string(1, 'x' + d) + "_momentum";
+			}
+			return strings;
+		}();
+		return names;
+	}
 	State() :
 		ρ((*this)[0]), e((*this)[1]), s(reinterpret_cast<Vector<D> &>((*this)[2])) {
+	}
+	State(State const &other) :
+		ρ((*this)[0]), e((*this)[1]), s(reinterpret_cast<Vector<D> &>((*this)[2])) {
+		*this = other;
 	}
 	State(base_type const &other) :
 		ρ((*this)[0]), e((*this)[1]), s(reinterpret_cast<Vector<D> &>((*this)[2])) {
 		*this = other;
 	}
 	State &operator=(State const &other) {
+		base_type::operator=(other);
+		return *this;
+	}
+	State &operator=(base_type const &other) {
 		base_type::operator=(other);
 		return *this;
 	}

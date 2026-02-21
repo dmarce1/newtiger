@@ -1,4 +1,5 @@
 #include "Grid.hpp"
+#include "Silo.hpp"
 
 #include <hpx/init.hpp>
 
@@ -24,17 +25,27 @@ void driver(Real tmax) {
 	constexpr std::array<Real, O> beta = {1_R, 0.5_R};
 	constexpr Real dx = grid.cellWidth;
 	Real a, dt;
+	Integer iter = 0_I;
+	auto const output = [&]() {
+		Vector<D> const origin(-2_R / Real(N));
+		std::string const fname = "X." + std::to_string(iter) + ".silo";
+		Silo<D> silo(fname);
+		grid.output(silo);
+	};
 	while (std::nextafter(t, tmax) < tmax) {
+		output();
 		for (Integer rk = 0; rk < O; rk++) {
 			grid.reconstruct();
 			a = grid.fluxes();
-			dt = (rk == 0) ? (cfl * dx / a) : dt;
+			dt = (rk == 0) ? std::max(cfl * dx / a, tmax - t) : dt;
 			grid.update(dt, beta[rk]);
 			grid.boundaries();
 		}
 		grid.store();
 		t += dt;
+		iter++;
 	}
+	output();
 }
 
 int hpx_main(int argc, char *argv[]) {

@@ -12,6 +12,7 @@
 /*₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵨ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁱⁿᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᵅᵝᵞᵟᵋᵠᵡ*/
 
 #include "Box.hpp"
+#include "Silo.hpp"
 #include "State.hpp"
 
 template <Integer dimCount, Integer intWidth>
@@ -64,6 +65,11 @@ struct Grid {
 	}
 	static constexpr Real faceSign(Integer f) {
 		return Real(2_I * (f & 1_I) - 1_I);
+	}
+	void output(Silo<dimCount> &silo) const {
+		Vector<dimCount> const origin = -ghostWidth * cellWidth;
+		silo.writeCoordinates(origin, cellWidth, extWidth);
+		silo.writeData(un_.begin(), State<dimCount>::getFieldNames());
 	}
 	void reconstruct() {
 		constexpr auto θ = 1.3_R;

@@ -26,9 +26,10 @@ add_hpx_executable(
   	include/Grid.hpp
   	include/Integer.hpp
   	include/Real.hpp
+  	include/Silo.hpp
   	include/State.hpp
   	include/Vector.hpp
 )
-#target_link_libraries(yourTarget PRIVATE SILO::silo)
+target_link_options(${PROJECT_NAME} PRIVATE -rdynamic)
 
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
