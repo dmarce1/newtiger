@@ -57,7 +57,10 @@ inline constexpr Real sgn(Real x) {
 }
 
 inline constexpr Real minmod(Real a, Real b) {
-	return 0.5_R * (sgn(a) + sgn(b)) * std::min(std::abs(a), std::abs(b));
+	using std::abs;
+	using std::copysign;
+	using std::min;
+	return (copysign(0.5_R, a) + copysign(0.5_R, b)) * min(abs(a), abs(b));
 }
 
 inline constexpr Real minmod(Real a, Real b, Real θ) {

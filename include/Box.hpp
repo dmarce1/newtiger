@@ -12,12 +12,13 @@
 
 #include <algorithm>
 #include <array>
+#include <ostream>
 
 template <Integer D>
 class Box {
 	static constexpr Integer childCount = 1 << D;
-	std::array<Integer, D> begin_{};
-	std::array<Integer, D> end_{};
+	std::array<Integer, D> begin_;
+	std::array<Integer, D> end_;
 
 public:
 	constexpr Box() = default;
@@ -93,16 +94,16 @@ public:
 	constexpr Box expand(Integer n) const {
 		Box b;
 		for (Integer d = 0; d < D; ++d) {
-			b.begin_[d] -= n;
-			b.end_[d] += n;
+			b.begin_[d] = begin_[d] - n;
+			b.end_[d] = end_[d] + n;
 		}
 		return b;
 	}
 	constexpr Box scale(Integer n) const {
 		Box b;
 		for (Integer d = 0; d < D; ++d) {
-			b.begin_[d] *= n;
-			b.end_[d] *= n;
+			b.begin_[d] = begin_[d] * n;
+			b.end_[d] = end_[d] * n;
 		}
 		return b;
 	}
@@ -176,14 +177,14 @@ public:
 
 template <Integer D, typename F>
 constexpr void forEach(Box<D> const &box, F const &foo) {
-	std::array<Integer, D> idx_;
-	auto const &beg_ = box.begin();
-	auto const &end_ = box.end();
+	std::array<Integer, D> idx;
+	auto const &beg = box.begin();
+	auto const &end = box.end();
 	auto const lambda = [&]<Integer I>(auto const &self) {
 		if constexpr (I == D) {
-			return foo(idx_);
+			return foo(idx);
 		} else {
-			for (idx_[I] = beg_[I]; idx_[I] != end_[I]; ++idx_[I]) {
+			for (idx[I] = beg[I]; idx[I] != end[I]; ++idx[I]) {
 				self.template operator()<I + 1>(self);
 			}
 		}
@@ -191,4 +192,34 @@ constexpr void forEach(Box<D> const &box, F const &foo) {
 	lambda.template operator()<0>(lambda);
 }
 
+template <Integer D, typename F>
+constexpr void forEach(Box<D> const &box1, Box<D> const &box2, F const &foo) {
+	std::array<Integer, D> idx1, idx2;
+	auto const &beg1 = box1.begin();
+	auto const &beg2 = box2.begin();
+	auto const &end1 = box1.end();
+	auto const lambda = [&]<Integer I>(auto const &self) {
+		if constexpr (I == D) {
+			return foo(idx1, idx2);
+		} else {
+			for (idx1[I] = beg1[I], idx2[I] = beg2[I]; idx1[I] != end1[I]; ++idx1[I], ++idx2[I]) {
+				self.template operator()<I + 1>(self);
+			}
+		}
+	};
+	lambda.template operator()<0>(lambda);
+}
+
+template <Integer D>
+std::ostream &operator<<(std::ostream &os, Box<D> const &box) {
+	os << "Box<" << D << ">{ ";
+	for (Integer d = 0; d < D; ++d) {
+		os << '[' << box.begin()[d] << ',' << box.end()[d] << ')';
+		if (d + 1 != D) {
+			os << ", ";
+		}
+	}
+	os << " }";
+	return os;
+}
 #endif /* INCLUDE_BOX_HPP_ */

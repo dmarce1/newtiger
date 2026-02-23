@@ -22,7 +22,9 @@ add_hpx_executable(
   SOURCES
     src/main.cpp
   HEADERS
+  	include/Allocator.hpp
   	include/Box.hpp
+  	include/DoubleValue.hpp
   	include/Grid.hpp
   	include/Integer.hpp
   	include/Real.hpp

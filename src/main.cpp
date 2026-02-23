@@ -6,14 +6,13 @@
 constexpr Real cfl = 0.4_R;
 
 void driver(Real tmax) {
-	Real t = 0_R;
 	constexpr Integer D = 1;
 	constexpr Integer O = 2;
 	constexpr Integer N = 128;
-	Grid<D, N> grid;
-	grid.initialize([](std::array<Integer, D> const &idx) {
+	Grid<O, D, N> grid;
+	grid.initialize([](auto const &x) {
 		State<D> u{};
-		if (2 * idx[0] < N) {
+		if (x[0] < 0.5_R) {
 			u.setDensity(1_R);
 			u.setPressure(1_R);
 		} else {
@@ -22,23 +21,27 @@ void driver(Real tmax) {
 		}
 		return u;
 	});
-	constexpr std::array<Real, O> beta = {1_R, 0.5_R};
+	constexpr Real beta[3][2] = {{}, {1_R}, {1_R, 0.5_R}};
 	constexpr Real dx = grid.cellWidth;
+	Real t = 0_R;
 	Real a, dt;
 	Integer iter = 0_I;
 	auto const output = [&]() {
+		printf("i=%i t=%e dt=%e\n", int(iter), t, dt);
 		Vector<D> const origin(-2_R / Real(N));
 		std::string const fname = "X." + std::to_string(iter) + ".silo";
 		Silo<D> silo(fname);
 		grid.output(silo);
 	};
 	while (std::nextafter(t, tmax) < tmax) {
-		output();
 		for (Integer rk = 0; rk < O; rk++) {
 			grid.reconstruct();
 			a = grid.fluxes();
-			dt = (rk == 0) ? std::max(cfl * dx / a, tmax - t) : dt;
-			grid.update(dt, beta[rk]);
+			if (rk == 0) {
+				dt = std::min(cfl * dx / a, tmax - t);
+				output();
+			}
+			grid.update(dt, beta[O][rk]);
 			grid.boundaries();
 		}
 		grid.store();
@@ -49,7 +52,7 @@ void driver(Real tmax) {
 }
 
 int hpx_main(int argc, char *argv[]) {
-	driver(1.0_R);
+	driver(1_R / 8_R);
 	return hpx::local::finalize();
 }
 

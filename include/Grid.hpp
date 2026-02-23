@@ -11,21 +11,21 @@
 /*AαΑBβΒGγΓDδΔEεΕZζΖHηΗThθΘIιΙKκΚLλΛMμΜNνΝXξΞOοΟPπΠRρΡSσΣTτΤYυΥFφΦChχΧPsψΨOωΩ*/
 /*₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵨ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁱⁿᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᵅᵝᵞᵟᵋᵠᵡ*/
 
+#include "Allocator.hpp"
 #include "Box.hpp"
 #include "Silo.hpp"
 #include "State.hpp"
 
-template <Integer dimCount, Integer intWidth>
-struct Grid {
-	constexpr static auto faceCount = 2_I * dimCount;
-	constexpr static auto ghostWidth = 2_I;
-	constexpr static auto intBox = Box<dimCount>(intWidth);
-	constexpr static auto intVolume = intBox.volume();
-	constexpr static auto extWidth = intWidth + 2_I * ghostWidth;
-	constexpr static auto extBox = Box<dimCount>(extWidth);
-	constexpr static auto extVolume = extBox.volume();
-	constexpr static auto cellWidth = Real(intWidth);
-	constexpr static auto fluxBox = []() {
+#include <functional>
+
+template <Integer order, Integer dimCount, Integer intWidth>
+struct Grid : Allocator {
+	static constexpr auto faceCount = 2_I * dimCount;
+	static constexpr auto ghostWidth = 2_I;
+	static constexpr auto extWidth = intWidth + 2_I * ghostWidth;
+	static constexpr auto intBox = Box<dimCount>(intWidth);
+	static constexpr auto extBox = intBox.expand(ghostWidth);
+	static constexpr auto fluxBox = []() {
 		std::array<Box<dimCount>, dimCount> fbox;
 		auto const lb = intBox.begin();
 		auto ub = intBox.end();
@@ -35,24 +35,6 @@ struct Grid {
 			ub[d]--;
 		}
 		return fbox;
-	}();
-	constexpr static auto gridStride = []() {
-		std::array<Integer, dimCount> str;
-		str.back() = 1;
-		for (Integer d = dimCount - 1; d > 0; d--) {
-			str[d - 1] = str[d] * extWidth;
-		}
-		return str;
-	}();
-	constexpr static auto cellCenters = []() {
-		std::array<Vector<dimCount>, extVolume> x;
-		forEach(extBox, [&](auto const &idx) {
-			auto const i = extBox.flatten(idx);
-			for (Integer d = 0; d < dimCount; d++) {
-				x[i][d] = cellWidth * (0.5_R + idx[d] - ghostWidth);
-			}
-		});
-		return x;
 	}();
 	static constexpr Integer toRightFace(Integer dim) {
 		return 2 * dim + 1;
@@ -66,6 +48,42 @@ struct Grid {
 	static constexpr Real faceSign(Integer f) {
 		return Real(2_I * (f & 1_I) - 1_I);
 	}
+	static constexpr auto bndBox = []() {
+		std::array<Box<dimCount>, faceCount> bbox;
+		std::array<Integer, dimCount> lbl, ubl, lbr, ubr;
+		for (Integer d = 0; d < dimCount; d++) {
+			lbr = lbl = extBox.begin();
+			ubr = ubl = extBox.end();
+			lbl[d] = -ghostWidth;
+			ubl[d] = 0_I;
+			lbr[d] = intWidth;
+			ubr[d] = lbr[d] + ghostWidth;
+			bbox[toLeftFace(d)] = Box<dimCount>(lbl, ubl);
+			bbox[toRightFace(d)] = Box<dimCount>(lbr, ubr);
+		}
+		return bbox;
+	}();
+	static constexpr auto intVolume = intBox.volume();
+	static constexpr auto extVolume = extBox.volume();
+	static constexpr auto cellWidth = inv(intWidth);
+	static constexpr auto gridStride = []() {
+		std::array<Integer, dimCount> str;
+		str.back() = 1;
+		for (Integer d = dimCount - 1; d > 0; d--) {
+			str[d - 1] = str[d] * extWidth;
+		}
+		return str;
+	}();
+	static constexpr auto cellCenters = []() {
+		std::array<Vector<dimCount>, extVolume> x;
+		forEach(extBox, [&](auto const &idx) {
+			auto const i = extBox.flatten(idx);
+			for (Integer d = 0; d < dimCount; d++) {
+				x[i][d] = cellWidth * (0.5_R + Real(idx[d]));
+			}
+		});
+		return x;
+	}();
 	void output(Silo<dimCount> &silo) const {
 		Vector<dimCount> const origin = -ghostWidth * cellWidth;
 		silo.writeCoordinates(origin, cellWidth, extWidth);
@@ -74,22 +92,35 @@ struct Grid {
 	void reconstruct() {
 		constexpr auto θ = 1.3_R;
 		for (Integer d = 0; d < dimCount; d++) {
-			auto const stride = gridStride[d];
-			forEach(intBox, [&](auto const &idx) {
+			auto const box = intBox.expand(1);
+			forEach(box, [&](auto const &idx) {
 				auto const i = extBox.flatten(idx);
-				auto const ux = minmod(un_[i + stride] - un_[i], un_[i] - un_[i - stride], θ);
-				uf_[toRightFace(d)][i] = un_[i] + 0.5_R * ux;
-				uf_[toLeftFace(d)][i] = un_[i] - 0.5_R * ux;
+				auto &rf = uf_[toRightFace(d)][i];
+				auto &lf = uf_[toLeftFace(d)][i];
+				if constexpr (order == 1) {
+					rf = lf = un_[i];
+				} else if constexpr (order == 2) {
+					auto const di = gridStride[d];
+					auto const up = un_[i + di];
+					auto const u0 = un_[i];
+					auto const um = un_[i - di];
+					auto const ux = minmod(up - u0, u0 - um, θ);
+					rf = un_[i] + 0.5_R * ux;
+					lf = un_[i] - 0.5_R * ux;
+				} else {
+					static_assert(false);
+				}
 			});
 		}
 	}
 	Real fluxes() {
 		Real λ_max = 0_R;
 		for (Integer d = 0; d < dimCount; d++) {
+			auto const di = gridStride[d];
 			forEach(fluxBox[d], [&](auto const &idx) {
 				auto const i = extBox.flatten(idx);
-				auto const &ul = uf_[toRightFace(d)][i];
-				auto const &ur = uf_[toLeftFace(d)][i - gridStride[d]];
+				auto const &ul = uf_[toRightFace(d)][i - di];
+				auto const &ur = uf_[toLeftFace(d)][i];
 				auto const [f, λ_i] = riemannFlux(ul, ur, d);
 				f_[d][i] = f;
 				λ_max = std::max(λ_max, λ_i);
@@ -112,18 +143,16 @@ struct Grid {
 	}
 	void boundaries() {
 		for (Integer d = 0; d < dimCount; d++) {
-			for (Integer n = 0; n < ghostWidth; n++) {
-				auto const rightBox = extBox.slice(d, intWidth + n);
-				auto const leftBox = extBox.slice(d, n - ghostWidth);
-				forEach(rightBox, [&](auto const &idx) {
-					Integer const i = extBox.flatten(idx);
-					un_[i] = un_[i + intWidth * gridStride[d]];
-				});
-				forEach(leftBox, [&](auto const &idx) {
-					Integer const i = extBox.flatten(idx);
-					un_[i] = un_[i - intWidth * gridStride[d]];
-				});
-			}
+			auto const extL = bndBox[toLeftFace(d)];
+			auto const extR = bndBox[toRightFace(d)];
+			auto const intR = extL.shift(d, +intWidth);
+			auto const intL = extR.shift(d, -intWidth);
+			forEach(extL, intR, [&](auto const &extIdx, auto const &intIdx) {
+				un_[extBox.flatten(extIdx)] = un_[extBox.flatten(intIdx)];
+			});
+			forEach(extR, intL, [&](auto const &extIdx, auto const &intIdx) {
+				un_[extBox.flatten(extIdx)] = un_[extBox.flatten(intIdx)];
+			});
 		}
 	}
 	void store() {
@@ -133,18 +162,29 @@ struct Grid {
 	void initialize(F const &foo) {
 		forEach(intBox, [&](auto const &idx) {
 			Integer const i = extBox.flatten(idx);
-			un_[i] = foo(idx);
+			un_[i] = foo(cellCenters[i]);
 		});
 		boundaries();
 		store();
 	}
+	Grid() :
+		Allocator(2 * sizeof(StateArray) + sizeof(FluxArray) + sizeof(ReconArray)),
+		f_(get<FluxArray>()),
+		uf_(get<ReconArray>()),
+		un_(get<StateArray>()),
+		u0_(get<StateArray>()) {
+	}
+	virtual ~Grid() {
+	}
 
 private:
 	using StateArray = std::array<State<dimCount>, extVolume>;
-	std::array<StateArray, faceCount> f_;
-	std::array<StateArray, faceCount> uf_;
-	StateArray un_;
-	StateArray u0_;
+	using ReconArray = std::array<StateArray, faceCount>;
+	using FluxArray = std::array<StateArray, dimCount>;
+	std::array<StateArray, dimCount> &f_;
+	std::array<StateArray, faceCount> &uf_;
+	StateArray &un_;
+	StateArray &u0_;
 };
 
 #endif /* INCLUDE_GRID_HPP_ */
