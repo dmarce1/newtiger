@@ -8,6 +8,7 @@
 #ifndef INCLUDE_SILO_HPP_
 #define INCLUDE_SILO_HPP_
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <vector>
@@ -57,16 +58,13 @@ struct Silo {
 		}
 		DBPutQuadmesh(db_, meshname, coordnames, coords_.data(), meshDims_.data(), D, datatype, coordtype, optlist_);
 	}
-	void writeData(auto begin, auto const &names) {
+	void writeData(auto begin, auto const &name) {
 		std::vector<Real> var(nels_);
 		void const *varptr = static_cast<void const *>(var.data());
-		Integer const nfields = names.size();
-		for (Integer f = 0; f < nfields; f++) {
-			for (auto n = 0, it = begin; n < nels_; ++n, ++it) {
-				var[n] = (*it)[f];
-			}
-			DBPutQuadvar1(db_, names[f].c_str(), meshname, varptr, varDims_.data(), D, NULL, 0, datatype, centering, optlist_);
+		for (auto n = 0, it = begin; n < nels_; ++n, ++it) {
+			var[n] = *it;
 		}
+		DBPutQuadvar1(db_, name.c_str(), meshname, varptr, varDims_.data(), D, NULL, 0, datatype, centering, optlist_);
 	}
 	~Silo() {
 		DBFreeOptlist(optlist_);

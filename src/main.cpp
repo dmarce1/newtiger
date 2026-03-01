@@ -1,5 +1,11 @@
+#include "AutoDiff.hpp"
+#include "Constants.hpp"
+#include "CoupledState.hpp"
 #include "Grid.hpp"
+#include "Integer.hpp"
+#include "RadiationState.hpp"
 #include "Silo.hpp"
+#include "Simd.hpp"
 
 #include <hpx/init.hpp>
 
@@ -8,10 +14,11 @@ constexpr Real cfl = 0.4_R;
 void driver(Real tmax) {
 	constexpr Integer D = 1;
 	constexpr Integer O = 2;
-	constexpr Integer N = 128;
+	constexpr Integer N = 256;
 	Grid<O, D, N> grid;
 	grid.initialize([](auto const &x) {
-		State<D> u{};
+		GasState<Real, D> u;
+		std::fill(u.begin(), u.end(), 0_R);
 		if (x[0] < 0.5_R) {
 			u.setDensity(1_R);
 			u.setPressure(1_R);
@@ -28,7 +35,7 @@ void driver(Real tmax) {
 	Integer iter = 0_I;
 	auto const output = [&]() {
 		printf("i=%i t=%e dt=%e\n", int(iter), t, dt);
-		Vector<D> const origin(-2_R / Real(N));
+		Vector<Real, D> const origin(-2_R / Real(N));
 		std::string const fname = "X." + std::to_string(iter) + ".silo";
 		Silo<D> silo(fname);
 		grid.output(silo);
@@ -52,7 +59,22 @@ void driver(Real tmax) {
 }
 
 int hpx_main(int argc, char *argv[]) {
-	driver(1_R / 8_R);
+	//	std::cout << unitConversion(1_cm, 1_g, 1_s, 1_K) << std::endl;
+	//	std::cout << unitConversion(Constants::c, Constants::G, Constants::σ, Constants::kB / Constants::mᵤ) << std::endl;
+	//	//	driver(1_R / 8_R);
+
+	constexpr Integer D = 2;
+	RadiationState<Real, D> rad;
+	GasState<Real, D> gas;
+	gas.ρ = 0.01_R;
+	rad.E = 2_R;
+	gas.e = 5_R;
+	rad.F = 0_R;
+	gas.m = 0_R;
+	rad.F[0] = 0.99_R;
+	gas.updateInternalEnergy();
+	CoupledState<Real, D> coupled(gas, rad);
+	coupled.solveImplicit(1_R, 1_R, 1_R, 100_R);
 	return hpx::local::finalize();
 }
 

@@ -91,20 +91,26 @@ public:
 		}
 		return v;
 	}
-	constexpr Box expand(Integer n) const {
-		Box b;
+	constexpr Box pad(std::pair<Integer, Integer> const &nm) const {
+		Box b = *this;
+		for (Integer d = 0; d < D; ++d) {
+			b.begin_[d] = begin_[d] - nm.first;
+			b.end_[d] = end_[d] + nm.second;
+		}
+		return b;
+	}
+	constexpr Box pad(Integer n) const {
+		Box b = *this;
 		for (Integer d = 0; d < D; ++d) {
 			b.begin_[d] = begin_[d] - n;
 			b.end_[d] = end_[d] + n;
 		}
 		return b;
 	}
-	constexpr Box scale(Integer n) const {
+	constexpr Box pad(Integer d, std::pair<Integer, Integer> const &nm) const {
 		Box b;
-		for (Integer d = 0; d < D; ++d) {
-			b.begin_[d] = begin_[d] * n;
-			b.end_[d] = end_[d] * n;
-		}
+		b.begin_[d] = begin_[d] - nm.first;
+		b.end_[d] = end_[d] + nm.second;
 		return b;
 	}
 	constexpr Box<D - 1> slice(Integer d) const {
@@ -136,9 +142,6 @@ public:
 			s[i] = (i == d) ? n : 0_I;
 		}
 		return shift(s);
-	}
-	constexpr Box shrink(Integer n) const {
-		return expand(-n);
 	}
 	constexpr Box transpose(Integer d1, Integer d2) const {
 		Box t = *this;
@@ -190,6 +193,33 @@ constexpr void forEach(Box<D> const &box, F const &foo) {
 		}
 	};
 	lambda.template operator()<0>(lambda);
+}
+
+template <Integer maxWidth, Integer D, typename F>
+constexpr void forEachSimd(Box<D> const &box, F const &foo) {
+	std::array<Integer, D> idx;
+	auto const &beg = box.begin();
+	auto const &end = box.end();
+	auto const lambda = [&]<Integer I, Integer W>(auto const &self) {
+		constexpr Integer mask = ~(W - 1);
+		if constexpr (I == D - 1) {
+			if constexpr (W == maxWidth) {
+				idx[I] = beg[I];
+			}
+			auto const ub = beg[I] + ((end[I] - beg[I]) & mask);
+			for (; idx[I] != ub; idx[I] += W) {
+				foo.template operator()<W>(idx);
+			}
+			if constexpr (W > 1) {
+				self.template operator()<I, W / 2>(self);
+			}
+		} else {
+			for (idx[I] = beg[I]; idx[I] != end[I]; ++idx[I]) {
+				self.template operator()<I + 1>(self);
+			}
+		}
+	};
+	lambda.template operator()<0, maxWidth>(lambda);
 }
 
 template <Integer D, typename F>

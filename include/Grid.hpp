@@ -13,18 +13,24 @@
 
 #include "Allocator.hpp"
 #include "Box.hpp"
+#include "GasState.hpp"
+#include "Limiters.hpp"
+#include "RadiationState.hpp"
 #include "Silo.hpp"
-#include "State.hpp"
+#include "Simd.hpp"
 
 #include <functional>
+#include <iostream>
 
 template <Integer order, Integer dimCount, Integer intWidth>
 struct Grid : Allocator {
+	static constexpr auto simdWidth = 4;
+	static constexpr auto fieldCount = GasState<Real, dimCount>::size();
 	static constexpr auto faceCount = 2_I * dimCount;
-	static constexpr auto ghostWidth = 2_I;
+	static constexpr auto ghostWidth = 4_I;
 	static constexpr auto extWidth = intWidth + 2_I * ghostWidth;
 	static constexpr auto intBox = Box<dimCount>(intWidth);
-	static constexpr auto extBox = intBox.expand(ghostWidth);
+	static constexpr auto extBox = intBox.pad(ghostWidth);
 	static constexpr auto fluxBox = []() {
 		std::array<Box<dimCount>, dimCount> fbox;
 		auto const lb = intBox.begin();
@@ -75,7 +81,7 @@ struct Grid : Allocator {
 		return str;
 	}();
 	static constexpr auto cellCenters = []() {
-		std::array<Vector<dimCount>, extVolume> x;
+		std::array<Vector<Real, dimCount>, extVolume> x;
 		forEach(extBox, [&](auto const &idx) {
 			auto const i = extBox.flatten(idx);
 			for (Integer d = 0; d < dimCount; d++) {
@@ -85,30 +91,51 @@ struct Grid : Allocator {
 		return x;
 	}();
 	void output(Silo<dimCount> &silo) const {
-		Vector<dimCount> const origin = -ghostWidth * cellWidth;
+		Vector<Real, dimCount> const origin = -ghostWidth * cellWidth;
 		silo.writeCoordinates(origin, cellWidth, extWidth);
-		silo.writeData(un_.begin(), State<dimCount>::getFieldNames());
+		auto const &names = GasState<Real, dimCount>::getFieldNames();
+		for (Integer f = 0; f < fieldCount; f++) {
+			silo.writeData(un_[f].begin(), names[f]);
+		}
 	}
 	void reconstruct() {
 		constexpr auto θ = 1.3_R;
 		for (Integer d = 0; d < dimCount; d++) {
-			auto const box = intBox.expand(1);
-			forEach(box, [&](auto const &idx) {
-				auto const i = extBox.flatten(idx);
-				auto &rf = uf_[toRightFace(d)][i];
-				auto &lf = uf_[toLeftFace(d)][i];
+			forEachSimd<maxSimdSize<Real>()>(intBox.pad(d, std::pair(1, 1)), [&]<Integer W>(auto const &idx) {
+				using SimdType = Simd<Real, W>;
+				GasState<SimdType, dimCount> u0, ur, ul;
+				Integer const i = extBox.flatten(idx);
+				for (Integer f = 0; f < fieldCount; f++) {
+					u0[f].load(&un_[f][i]);
+				}
 				if constexpr (order == 1) {
-					rf = lf = un_[i];
+					ur = ul = u0;
 				} else if constexpr (order == 2) {
+					GasState<SimdType, dimCount> up, um, Δ;
 					auto const di = gridStride[d];
-					auto const up = un_[i + di];
-					auto const u0 = un_[i];
-					auto const um = un_[i - di];
-					auto const ux = minmod(up - u0, u0 - um, θ);
-					rf = un_[i] + 0.5_R * ux;
-					lf = un_[i] - 0.5_R * ux;
+					for (Integer f = 0; f < fieldCount; f++) {
+						up[f].load(&un_[f][i + di]);
+						um[f].load(&un_[f][i - di]);
+					}
+					auto Δp = up - u0;
+					auto Δm = u0 - um;
+					GasState<SimdType, dimCount> GasState(u0);
+					auto const [_, R, L] = GasState.eigenstructure(d);
+					Δp = L * Δp;
+					Δm = L * Δm;
+					auto const Δc = 0.5_R * (Δp + Δm);
+					for (Integer f = 0; f < fieldCount; f++) {
+						Δ[f] = minmod(Δc[f], θ * minmod(Δp[f], Δm[f]));
+					}
+					Δ = R * Δ;
+					ur = u0 + 0.5_R * Δ;
+					ul = u0 - 0.5_R * Δ;
 				} else {
 					static_assert(false);
+				}
+				for (Integer f = 0; f < fieldCount; f++) {
+					ur[f].store(&uf_[toRightFace(d)][f][i]);
+					ul[f].store(&uf_[toLeftFace(d)][f][i]);
 				}
 			});
 		}
@@ -116,14 +143,21 @@ struct Grid : Allocator {
 	Real fluxes() {
 		Real λ_max = 0_R;
 		for (Integer d = 0; d < dimCount; d++) {
+			using std::max;
 			auto const di = gridStride[d];
-			forEach(fluxBox[d], [&](auto const &idx) {
-				auto const i = extBox.flatten(idx);
-				auto const &ul = uf_[toRightFace(d)][i - di];
-				auto const &ur = uf_[toLeftFace(d)][i];
-				auto const [f, λ_i] = riemannFlux(ul, ur, d);
-				f_[d][i] = f;
-				λ_max = std::max(λ_max, λ_i);
+			forEachSimd<maxSimdSize<Real>()>(intBox.pad(d, std::pair(0, 1)), [&]<Integer W>(auto const &idx) {
+				using SimdType = Simd<Real, W>;
+				Integer const i = extBox.flatten(idx);
+				GasState<SimdType, dimCount> ur, ul, Δ;
+				for (Integer f = 0; f < fieldCount; f++) {
+					ur[f].load(&uf_[toLeftFace(d)][f][i]);
+					ul[f].load(&uf_[toRightFace(d)][f][i - di]);
+				}
+				auto const [flux, λ_i] = riemannFlux(ul, ur, d);
+				for (Integer f = 0; f < fieldCount; f++) {
+					flux[f].store(&f_[d][f][i]);
+				}
+				λ_max = max(λ_max, max(λ_i));
 			});
 		}
 		return λ_max;
@@ -131,14 +165,28 @@ struct Grid : Allocator {
 	void update(Real dt, Real β) {
 		constexpr auto dx = cellWidth;
 		auto const λ = dt * inv(dx);
-		forEach(intBox, [&](auto const &idx) {
+		forEachSimd<maxSimdSize<Real>()>(intBox, [&]<Integer W>(auto const &idx) {
+			using SimdType = Simd<Real, W>;
 			auto const i = extBox.flatten(idx);
-			for (Integer d = 0; d < dimCount; d++) {
-				auto const &fp = f_[d][i + gridStride[d]];
-				auto const &fm = f_[d][i];
-				un_[i] -= λ * (fp - fm);
+			GasState<SimdType, dimCount> u0, un;
+			Vector<GasState<SimdType, dimCount>, dimCount> fp, fm;
+			for (Integer f = 0; f < fieldCount; f++) {
+				un[f].load(&un_[f][i]);
+				u0[f].load(&u0_[f][i]);
+				for (Integer d = 0; d < dimCount; d++) {
+					auto const di = gridStride[d];
+					fp[d][f].load(&f_[d][f][i + di]);
+					fm[d][f].load(&f_[d][f][i]);
+				}
 			}
-			un_[i] = β * un_[i] + (1_R - β) * u0_[i];
+			for (Integer d = 0; d < dimCount; d++) {
+				un -= λ * (fp[d] - fm[d]);
+			}
+			un = β * un + (1_R - β) * u0;
+			un = un.updateInternalEnergy();
+			for (Integer f = 0; f < fieldCount; f++) {
+				un[f].store(&un_[f][i]);
+			}
 		});
 	}
 	void boundaries() {
@@ -148,10 +196,18 @@ struct Grid : Allocator {
 			auto const intR = extL.shift(d, +intWidth);
 			auto const intL = extR.shift(d, -intWidth);
 			forEach(extL, intR, [&](auto const &extIdx, auto const &intIdx) {
-				un_[extBox.flatten(extIdx)] = un_[extBox.flatten(intIdx)];
+				Integer const j = extBox.flatten(extIdx);
+				Integer const k = extBox.flatten(intIdx);
+				for (Integer f = 0; f < fieldCount; f++) {
+					un_[f][j] = un_[f][k];
+				}
 			});
 			forEach(extR, intL, [&](auto const &extIdx, auto const &intIdx) {
-				un_[extBox.flatten(extIdx)] = un_[extBox.flatten(intIdx)];
+				Integer const j = extBox.flatten(extIdx);
+				Integer const k = extBox.flatten(intIdx);
+				for (Integer f = 0; f < fieldCount; f++) {
+					un_[f][j] = un_[f][k];
+				}
 			});
 		}
 	}
@@ -162,29 +218,32 @@ struct Grid : Allocator {
 	void initialize(F const &foo) {
 		forEach(intBox, [&](auto const &idx) {
 			Integer const i = extBox.flatten(idx);
-			un_[i] = foo(cellCenters[i]);
+			auto const u = foo(cellCenters[i]);
+			for (Integer f = 0; f < fieldCount; f++) {
+				un_[f][i] = u[f];
+			}
 		});
 		boundaries();
 		store();
 	}
 	Grid() :
-		Allocator(2 * sizeof(StateArray) + sizeof(FluxArray) + sizeof(ReconArray)),
+		Allocator(2 * sizeof(GasStateArray) + sizeof(FluxArray) + sizeof(ReconArray)),
 		f_(get<FluxArray>()),
 		uf_(get<ReconArray>()),
-		un_(get<StateArray>()),
-		u0_(get<StateArray>()) {
+		un_(get<GasStateArray>()),
+		u0_(get<GasStateArray>()) {
 	}
 	virtual ~Grid() {
 	}
 
 private:
-	using StateArray = std::array<State<dimCount>, extVolume>;
-	using ReconArray = std::array<StateArray, faceCount>;
-	using FluxArray = std::array<StateArray, dimCount>;
-	std::array<StateArray, dimCount> &f_;
-	std::array<StateArray, faceCount> &uf_;
-	StateArray &un_;
-	StateArray &u0_;
+	using GasStateArray = std::array<std::array<Real, extVolume>, fieldCount>;
+	using ReconArray = std::array<GasStateArray, faceCount>;
+	using FluxArray = std::array<GasStateArray, dimCount>;
+	FluxArray &f_;
+	ReconArray &uf_;
+	GasStateArray &un_;
+	GasStateArray &u0_;
 };
 
 #endif /* INCLUDE_GRID_HPP_ */

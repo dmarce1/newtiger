@@ -15,11 +15,11 @@
 
 struct Allocator {
 	Allocator(Integer size) {
-		currentPointer_ = basePointer_ = malloc(size);
+		currentPointer_ = basePointer_ = static_cast<std::byte *>(malloc(size));
 	}
 	template <typename T>
 	T &get() {
-		auto *ptr = new (currentPointer_) T();
+		T *ptr = new (currentPointer_) T();
 		delete_.push_back([ptr]() {
 			ptr->~T();
 		});
@@ -35,8 +35,8 @@ struct Allocator {
 	}
 
 private:
-	void *basePointer_;
-	void *currentPointer_;
+	std::byte *basePointer_;
+	std::byte *currentPointer_;
 	std::vector<std::function<void()>> delete_;
 };
 

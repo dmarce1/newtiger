@@ -31,4 +31,8 @@ inline constexpr Integer pow(Integer x, Integer n) {
 	return z * y;
 }
 
+inline constexpr Integer round(Integer x, Integer n) {
+	return n * (1 + (x - 1) / n);
+}
+
 #endif /* INCLUDE_INTEGER_HPP_ */
