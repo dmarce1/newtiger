@@ -15,7 +15,6 @@
 #include <tuple>
 
 #include "Concepts.hpp"
-#include "Constants.hpp"
 #include "Debug.hpp"
 #include "GasState.hpp"
 #include "Integer.hpp"
@@ -141,8 +140,7 @@ public:
 			}
 		}
 		L = inv(R);
-		constexpr auto units = codeUnits();
-		return std::tuple(units.c * λ, R, L);
+		return std::tuple(λ, R, L);
 	}
 	friend auto riemannFlux(RadiationState const &UL, RadiationState const &UR, Integer n) {
 		auto const &ER = UR.E;
@@ -225,8 +223,7 @@ public:
 		flux.E = F0[n];
 		flux.F = β0 * F0[n];
 		flux.F += Π0;
-		constexpr auto units = codeUnits();
-		return std::pair(units.c * flux, units.c * max(λR, -λL));
+		return std::pair(flux, max(λR, -λL));
 	}
 	void setEnergy(Type e) {
 		E = e;

@@ -45,7 +45,7 @@ struct Silo {
 		Integer const meshWidth = gridWidth + ((D == 1) ? 0 : 1);
 		for (Integer d = 0; d < D; d++) {
 			x[d].resize(meshWidth);
-			for (Integer n = 0; n <= gridWidth; n++) {
+			for (Integer n = 0; n < meshWidth; n++) {
 				x[d][n] = origin[d] + Real(n) * dx;
 			}
 		}

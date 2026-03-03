@@ -109,11 +109,29 @@ public:
 	}
 	template <typename U>
 	constexpr auto dot(Vector<U, D> const &other) const {
-		auto result = data_[0] * other.data_[0];
+		auto result = data_[0] * other[0];
 		for (Integer i = 1; i < D; i++) {
 			result += data_[i] * other[i];
 		}
 		return result;
+	}
+	template <typename U>
+	constexpr auto cross(Vector<U, D> const &B) const {
+		auto const &A = *this;
+		using R = decltype(T{} * U{});
+		if constexpr (D == 1) {
+			return R(T(0_R));
+		} else if constexpr (D == 2) {
+			return A[0] * B[1] - A[1] * B[0];
+		} else if constexpr (D == 3) {
+			Vector<R, D> C;
+			C[0] = +A[1] * B[2] - A[2] * B[1];
+			C[1] = -A[0] * B[2] + A[2] * B[0];
+			C[2] = +A[1] * B[2] - A[2] * B[1];
+			return C;
+		} else {
+			static_assert(false);
+		}
 	}
 	constexpr auto data() const {
 		return data_.data();

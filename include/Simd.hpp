@@ -203,11 +203,11 @@ concept SimdScalar = std::is_same_v<T, Integer> || std::is_same_v<T, Real> || st
 	}
 
 #define SIMD_COMPATIBILITY_REDUCTION(Type, func)                                                                                           \
-	inline Type func(Type a) noexcept {                                                                                                    \
+	inline constexpr Type func(Type a) noexcept {                                                                                                    \
 		return a;                                                                                                                          \
 	}                                                                                                                                      \
 	template <typename T, Integer W>                                                                                                       \
-	inline Type func(Simd<T, W> a) noexcept {                                                                                              \
+	inline constexpr Type func(Simd<T, W> a) noexcept {                                                                                              \
 		return a.func();                                                                                                                   \
 	}
 
@@ -302,6 +302,7 @@ struct Simd<Real, W> {
 	SIMD_BINARY_FUNCTION(copysign);
 	SIMD_BINARY_FUNCTION(max);
 	SIMD_BINARY_FUNCTION(min);
+	SIMD_BINARY_FUNCTION(pow);
 	SIMD_COMPARE_OP(==);
 	SIMD_COMPARE_OP(!=);
 	SIMD_COMPARE_OP(>=);

@@ -108,7 +108,7 @@ public:
 		return b;
 	}
 	constexpr Box pad(Integer d, std::pair<Integer, Integer> const &nm) const {
-		Box b;
+		Box b = *this;
 		b.begin_[d] = begin_[d] - nm.first;
 		b.end_[d] = end_[d] + nm.second;
 		return b;
@@ -215,7 +215,7 @@ constexpr void forEachSimd(Box<D> const &box, F const &foo) {
 			}
 		} else {
 			for (idx[I] = beg[I]; idx[I] != end[I]; ++idx[I]) {
-				self.template operator()<I + 1>(self);
+				self.template operator()<I + 1, maxWidth>(self);
 			}
 		}
 	};

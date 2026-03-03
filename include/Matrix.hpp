@@ -125,7 +125,7 @@ struct Matrix {
 		Matrix<T, N, L> result;
 		for (Integer n = 0; n < N; n++) {
 			for (Integer l = 0; l < L; l++) {
-				result[n][l] = T(0);
+				result[n][l] = T(0_I);
 				for (Integer m = 0; m < M; m++) {
 					result[n][l] += data_[n][m] * other[m][l];
 				}
@@ -155,10 +155,10 @@ struct Matrix {
 		return M;
 	}
 	static constexpr auto identity() {
-		Matrix<T, N, M> I{T(0)};
+		Matrix<T, N, M> I{T(0_I)};
 		constexpr Integer L = std::min(N, M);
 		for (Integer n = 0; n < L; n++) {
-			I.data_[n][n] = T(1);
+			I.data_[n][n] = T(1_I);
 		}
 		return I;
 	}
@@ -215,11 +215,13 @@ struct Matrix {
 		if constexpr (N == 1) {
 			return A[0][0];
 		} else {
-			T d = A[0][0] * det(A.sub(0, 0));
-			for (Integer n = 2; n < N; n += 2) {
+			T d = T(0_I);
+			for (Integer n = 0; n < N; n += 2) {
+				//			if (!all(A[0][n] == T(0_I))) d += A[0][n] * det(A.sub(0, n));
 				d += A[0][n] * det(A.sub(0, n));
 			}
 			for (Integer n = 1; n < N; n += 2) {
+				//	if (!all(A[0][n] == T(0_I))) d -= A[0][n] * det(A.sub(0, n));
 				d -= A[0][n] * det(A.sub(0, n));
 			}
 			return d;
@@ -228,31 +230,36 @@ struct Matrix {
 	friend constexpr auto inv(Matrix const &A) {
 		static_assert(N == M);
 		Matrix iA;
-		for (Integer n = 0; n < N; n += 2) {
-			for (Integer m = 0; m < M; m += 2) {
-				iA[n][m] = +det(A.sub(n, m));
+		if constexpr (N == 1) {
+			iA[0][0] = inv(A[0][0]);
+		} else {
+			for (Integer n = 0; n < N; n += 2) {
+				for (Integer m = 0; m < M; m += 2) {
+					iA[n][m] = +det(A.sub(n, m));
+				}
+				for (Integer m = 1; m < M; m += 2) {
+					iA[n][m] = -det(A.sub(n, m));
+				}
 			}
-			for (Integer m = 1; m < M; m += 2) {
-				iA[n][m] = -det(A.sub(n, m));
+			for (Integer n = 1; n < N; n += 2) {
+				for (Integer m = 0; m < M; m += 2) {
+					iA[n][m] = -det(A.sub(n, m));
+				}
+				for (Integer m = 1; m < M; m += 2) {
+					iA[n][m] = +det(A.sub(n, m));
+				}
 			}
-		}
-		for (Integer n = 1; n < N; n += 2) {
-			for (Integer m = 0; m < M; m += 2) {
-				iA[n][m] = -det(A.sub(n, m));
+			T d = A[0][0] * det(A.sub(0, 0));
+			for (Integer n = 2; n < N; n += 2) {
+				d += A[0][n] * det(A.sub(0, n));
 			}
-			for (Integer m = 1; m < M; m += 2) {
-				iA[n][m] = +det(A.sub(n, m));
+			for (Integer n = 1; n < N; n += 2) {
+				d -= A[0][n] * det(A.sub(0, n));
 			}
+			T const id = inv(d);
+			iA = id * transpose(iA);
 		}
-		T d = A[0][0] * det(A.sub(0, 0));
-		for (Integer n = 2; n < N; n += 2) {
-			d += A[0][n] * det(A.sub(0, n));
-		}
-		for (Integer n = 1; n < N; n += 2) {
-			d -= A[0][n] * det(A.sub(0, n));
-		}
-		T const id = inv(d);
-		return id * transpose(iA);
+		return iA;
 	}
 	//	friend constexpr auto inv(Matrix A) {
 	//		Matrix<T, M, N> iA;
@@ -368,6 +375,31 @@ constexpr auto operator*(Vector<U, N2> const &V, Matrix<T, N2, N1> const &M) {
 	return transpose(M) * V;
 }
 
+template <typename T, Integer D>
+constexpr auto rotationMatrix(Vector<T, D> const &n) {
+	using std::abs;
+	constexpr Integer ix = 0;
+	constexpr Integer iy = 1;
+	Matrix<T, D> R;
+	if constexpr (D > 1) {
+		constexpr auto ex = Vector<T, D>::unit(0);
+		constexpr auto ey = Vector<T, D>::unit(1);
+		R[ix] = n.normalize();
+		R[iy] = select(abs(R[ix][ix]) < 0.5_R, ex, ey);
+		for (Integer k = 2; k < D; k++) {
+			R[k] = Vector<T, D>::unit(k);
+			for (Integer i = 0; i < k; i++) {
+				R[k] -= R[i][k] * R[i];
+			}
+			R[k] = R[k].normalize();
+		}
+	} else {
+		R[ix][ix] = T(1_R);
+	}
+	auto const L = inv(R);
+	return R;
+}
+
 template <typename T, Integer N>
 struct DiagonalMatrix : public Vector<T, N> {
 	operator Matrix<T, N>() const {
@@ -432,12 +464,12 @@ std::ostream &operator<<(std::ostream &os, Matrix<T, N, M> const &A) {
 		for (Integer m = 0; m < M; m++) {
 			auto &str = strs[n][m];
 			auto const &Anm = A[n][m];
-//			if (!MatrixType::isZero(Anm)) {
-				std::stringstream ss;
-				ss << Anm;
-				str = ss.str();
-				maxLen = std::max(maxLen,  str.size());
-//			}
+			//			if (!MatrixType::isZero(Anm)) {
+			std::stringstream ss;
+			ss << Anm;
+			str = ss.str();
+			maxLen = std::max(maxLen, str.size());
+			//			}
 		}
 	}
 	size_t const fieldLen = maxLen + 2;
