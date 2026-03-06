@@ -8,7 +8,7 @@
 #ifndef INCLUDE_BOX_HPP_
 #define INCLUDE_BOX_HPP_
 
-#include "Integer.hpp"
+#include "Vector.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,9 +16,8 @@
 
 template <Integer D>
 class Box {
-	static constexpr Integer childCount = 1 << D;
-	std::array<Integer, D> begin_;
-	std::array<Integer, D> end_;
+	Vector<Integer, D> begin_;
+	Vector<Integer, D> end_;
 
 public:
 	constexpr Box() = default;
@@ -29,12 +28,12 @@ public:
 		std::copy_n(e.begin(), D, end_.begin());
 	}
 	constexpr Box(Integer e) {
-		begin_.fill(0_I);
-		end_.fill(e);
+		begin_ = 0_I;
+		end_ = e;
 	}
 	constexpr Box(Integer b, Integer e) {
-		begin_.fill(b);
-		end_.fill(e);
+		begin_ = b;
+		end_ = e;
 	}
 	constexpr Box &operator=(Box const &) = default;
 	constexpr Box &operator=(Box &&) = default;
@@ -102,15 +101,15 @@ public:
 	constexpr Box pad(Integer n) const {
 		Box b = *this;
 		for (Integer d = 0; d < D; ++d) {
-			b.begin_[d] = begin_[d] - n;
-			b.end_[d] = end_[d] + n;
+			b.begin_[d] = b.begin_[d] - n;
+			b.end_[d] = b.end_[d] + n;
 		}
 		return b;
 	}
 	constexpr Box pad(Integer d, std::pair<Integer, Integer> const &nm) const {
 		Box b = *this;
-		b.begin_[d] = begin_[d] - nm.first;
-		b.end_[d] = end_[d] + nm.second;
+		b.begin_[d] = b.begin_[d] - nm.first;
+		b.end_[d] = b.end_[d] + nm.second;
 		return b;
 	}
 	constexpr Box<D - 1> slice(Integer d) const {
@@ -177,6 +176,7 @@ public:
 		arc & end_;
 	}
 };
+
 
 template <Integer D, typename F>
 constexpr void forEach(Box<D> const &box, F const &foo) {

@@ -71,8 +71,7 @@ struct CodeUnits {
 	Real code2K;
 };
 
-inline auto consteval codeUnits() {
-	CodeUnits units(Constants::c, Constants::G, Constants::kB / Constants::mᵤ, Constants::σ);
-	return units;
+static auto consteval codeUnits() {
+	return CodeUnits(Constants::c, Constants::G, Constants::kB / Constants::mᵤ, Constants::σ);
 }
 #endif /* INCLUDE_CONSTANTS_HPP_ */

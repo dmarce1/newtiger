@@ -225,6 +225,13 @@ struct AutoDiff {
 		B.d_ = b * Abm1;
 		return B;
 	}
+	friend inline constexpr AutoDiff exp(AutoDiff const &A) noexcept {
+		using std::exp;
+		AutoDiff eA;
+		eA.v_ = exp(A.v_);
+		eA.d_ = eA.v_ * A.d_;
+		return eA;
+	}
 	friend inline constexpr AutoDiff sqr(AutoDiff const &A) noexcept {
 		AutoDiff A2;
 		A2.v_ = sqr(A.v_);

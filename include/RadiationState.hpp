@@ -8,23 +8,22 @@
 #ifndef INCLUDE_RADIATIONSTATE_HPP_
 #define INCLUDE_RADIATIONSTATE_HPP_
 
-/*AαΑBβΒGγΓDδΔEεΕZζΖHηΗThθΘIιΙKκΚLλΛMμΜNνΝXξΞOοΟPπΠRρΡSσΣTτΤYυΥFφΦChχΧPsψΨOωΩ*/
+/*AαΑBβΒGγΓDδΔEεΕZζΖHηΗThθΘIιΙKκΚLλλMμΜNνΝXξΞOοΟPπΠRρΡSσΣTτΤYυΥFφΦChχΧPsψΨOωΩ*/
 /*₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵨ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁱⁿᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᵅᵝᵞᵟᵋᵠᵡ*/
 
 #include <string>
 #include <tuple>
 
-#include "Concepts.hpp"
+#include "AutoDiff.hpp"
+#include "Constants.hpp"
 #include "Debug.hpp"
 #include "GasState.hpp"
 #include "Integer.hpp"
 #include "Matrix.hpp"
 #include "Real.hpp"
-#include "Select.hpp"
 #include "Vector.hpp"
 
 #include <numeric>
-#include <sstream>
 
 template <typename Type, Integer dimCount>
 struct RadiationState : Vector<Type, 1 + dimCount> {
@@ -34,6 +33,7 @@ private:
 	static constexpr auto zero = 0.0_R;
 	static constexpr auto half = 0.5_R;
 	static constexpr auto one = 1.0_R;
+	static constexpr auto σ = codeUnits().σ;
 
 public:
 	static constexpr Integer size() {
@@ -52,19 +52,19 @@ public:
 		return names;
 	}
 	RadiationState() :
-		E(*(new(&(*this)[0]) Type{})), F(*(new(&(*this)[1]) Vector<Type, dimCount>{})) {
+		E_(*(new(&(*this)[0]) Type{})), F_(*(new(&(*this)[1]) Vector<Type, dimCount>{})) {
 	}
 	RadiationState(RadiationState const &other) :
-		E(*(new(&(*this)[0]) Type{})), F(*(new(&(*this)[1]) Vector<Type, dimCount>{})) {
+		E_(*(new(&(*this)[0]) Type{})), F_(*(new(&(*this)[1]) Vector<Type, dimCount>{})) {
 		*this = other;
 	}
 	RadiationState(base_type const &other) :
-		E(*(new(&(*this)[0]) Type{})), F(*(new(&(*this)[1]) Vector<Type, dimCount>{})) {
+		E_(*(new(&(*this)[0]) Type{})), F_(*(new(&(*this)[1]) Vector<Type, dimCount>{})) {
 		*this = other;
 	}
 	virtual ~RadiationState() {
-		E.~Type();
-		F.~Vector<Type, dimCount>();
+		E_.~Type();
+		F_.~Vector<Type, dimCount>();
 	}
 	RadiationState &operator=(RadiationState const &other) {
 		base_type::operator=(other);
@@ -74,176 +74,202 @@ public:
 		base_type::operator=(other);
 		return *this;
 	}
-	auto eigenstructure(Integer dim) const {
-		if (dim != dimCount - 1) std::swap(F[dimCount - 1], F[dim]);
-		ASSERT_POSITIVE(E);
-		auto const iE = inv(E);
-		auto const f2 = F.dot(F) * sqr(iE);
-		ASSERT_RANGE(0_R, f2, 1_R);
-		auto const Δ = 4_R - 3_R * f2;
-		auto const H = (1_R / 3_R) * (2_R + sqrt(Δ)) * E;
-		auto const H2 = sqr(H);
-		auto const iH = inv(H);
-		auto β = F * iH;
-		if constexpr (dimCount > 1) {
-			constexpr auto eps2 = sqr(Real(dimCount - 1) * eps_R);
-			auto const b2 = std::inner_product(β.begin(), β.begin() + dimCount - 1, β.begin(), 0_R);
-			if (b2 < eps2 * H2) {
-				for (Integer d = 0; d < dimCount - 1; d++) {
-					β[d] = eps_R * H;
+	template <Integer count>
+	Type enforcePositivity(Vector<RadiationState, count> const &u) const {
+		constexpr auto δ = 1e-3_R;
+		using std::abs;
+		using std::min;
+		using Auto = AutoDiff<Type, 1>;
+		Type θ = 1_R;
+		for (Integer j = 0; j < count; j++) {
+			RadiationState const du = u[j] - *this;
+			{
+				auto const δE = (δ - 1_R) * E_;
+				auto const θn = δE * inv(select(du.E_ < 0_R, du.E_, δE));
+				θ = min(θ, θn);
+			}
+			{
+				auto const residual = [du, this](auto θn) {
+					return sqr(E_ + θn * du.E_) - F_.dot(F_) - 2_R * θn * F_.dot(du.F_) - sqr(θn) * du.F_.dot(du.F_);
+				};
+				if (any(residual(θ) < 0_R)) {
+					Type err = 1_R;
+					Auto θn = Auto::genVar(θ);
+					for (Integer i = 0; any(err > 4_R * eps_R); i++) {
+						assert(i < 40);
+						Auto const f = residual(θn);
+						Type const dθn = -f.get() * inv(f.get(0));
+						θn = Auto::genVar(θn.get() + dθn);
+						err = abs(f.get() * sqr(inv(E_)));
+						std::cout << err << std::endl;
+					}
+					θ = min(θ, θn.get());
 				}
 			}
 		}
-		auto const β2 = β.dot(β);
-		auto const n = F.normalize();
-		auto const &βz = β[dimCount - 1];
-		auto const βz2 = sqr(βz);
-		auto const λs = 2_R * βz;
-		auto const den = 3_R - β2;
-		auto const num2 = (1_R - β2) * (den - 2_R * βz2);
-		auto const λd = sqrt(num2) * inv(den);
-		Vector<Type, size()> λ;
-		Matrix<Type, size()> R, L;
-		λ.front() = λs - λd;
-		λ.back() = λs + λd;
-		for (Integer d = 1; d < dimCount; d++) {
-			λ[d] = βz;
-		}
-		auto const λ14 = [&](auto const &λ) {
-			Vector<Type, size()> r;
-			r.front() = 1_R - 2_R * βz * λ + sqr(λ);
-			r.back() = -βz + 2_R * λ - βz * sqr(λ);
-			for (Integer d = 0; d < dimCount - 1; d++) {
-				r[d + 1] = β[d] * (1_R - sqr(λ));
+		if (any(θ < 1_R)) {
+			for (Integer j = 0; j < count; j++) {
+				RadiationState const du = u[j] - *this;
+				u[j] -= (1_R - θ) * (u[j] - *this);
 			}
+		}
+	}
+	auto eigenstructure(Integer n) const {
+		FpeGuard fpeGuard{};
+		ASSERT_POSITIVE(E_);
+		using std::abs;
+		constexpr Integer am = 0;
+		constexpr Integer ap = dimCount;
+		auto const F2 = F_.dot(F_);
+		auto const E2 = sqr(E_);
+		ASSERT_NONNEGATIVE(E2 - F2);
+		auto const H = (1_R / 3_R) * (2_R * E_ + sqrt(4_R * E2 - 3_R * F2));
+		auto const β = F_ * inv(H);
+		auto const β2 = β.dot(β);
+		auto const &βz = β[n];
+		auto const βz2 = sqr(βz);
+		auto const Ξ = sqrt((1_R - β2) * (3_R - β2 - 2_R * βz2));
+		Matrix<Type, size()> A, B;
+		Vector<Type, size()> λ;
+		auto const lambda = [β, βz, n](auto const &λ) {
+			Vector<Type, size()> r{};
+			auto const λ2 = sqr(λ);
+			r[0] = 1_R - 2_R * βz * λ + λ2;
+			for (Integer k = 0; k < dimCount; k++) {
+				r[k + 1] = β[k] * (1_R - λ2);
+			}
+			r[n + 1] += 2_R * (λ - βz);
 			return r;
 		};
-		R[0] = λ14(λ.front());
-		R[dimCount] = λ14(λ.back());
+		λ.front() = (2_R * βz - Ξ) * inv(3_R - β2);
+		λ.back() = (2_R * βz + Ξ) * inv(3_R - β2);
+		for (Integer k = 1; k < dimCount; k++) {
+			λ[k] = βz;
+		}
+		B.setCol(am, lambda(λ.front()));
+		B.setCol(ap, lambda(λ.back()));
 		if constexpr (dimCount > 1) {
-			R[1].front() = sqrt(β2 - βz2);
-			R[1].back() = R[1].front() * βz;
-			for (Integer d = 0; d < dimCount - 1; d++) {
-				R[1][d + 1] = n[d] * (1_R - βz2);
+			B[0][1] = β2 - βz2;
+			for (Integer k = 0; k < dimCount; k++) {
+				B[k + 1][1] = select(β[k] != 0_R, β[k] * (1_R - βz2), 1_R);
+			}
+			B[n + 1][1] -= select(β[n] != 0_R, β[n] * (1_R - β2), 1_R);
+			if constexpr (dimCount > 2) {
+				auto const s1 = (n == 0) ? 1 : 0;
+				auto const s2 = (n == 2) ? 1 : 2;
+				auto const nz = sqr(β[s1]) + sqr(β[s2]) != 0_R;
+				B[s1 + 1][2] = select(nz, -β[s2], -1_R);
+				B[s2 + 1][2] = select(nz, +β[s1], +1_R);
 			}
 		}
-		if constexpr (dimCount > 2) {
-			R[2].front() = R[2].back() = zero;
-			R[2][1] = -n[1];
-			R[2][2] = +n[0];
+		A[0][0] = 1.5_R;
+		for (Integer j = 0, k = 1; j < dimCount; j++, k++) {
+			A[0][k] = 0.5_R * β[j];
+			A[k][0] = β[j];
+			A[k][k] = 1_R;
 		}
-		R = transpose(R);
-		if (dim != dimCount - 1) {
-			for (Integer d = 0; d < dimCount; d++) {
-				std::swap(R[dim][d + 1], R[dimCount][d]);
-				std::swap(L[d + 1][dim], L[d][dimCount]);
-			}
-		}
-		L = inv(R);
-		return std::tuple(λ, R, L);
+		auto const R = A * B;
+		auto const L = inv(R);
+		return std::tuple(
+			λ,
+			[R](RadiationState const &dc) {
+				return R * dc;
+			},
+			[L](RadiationState const &du) {
+				return L * du;
+			});
 	}
-	friend auto riemannFlux(RadiationState const &UL, RadiationState const &UR, Integer n) {
-		auto const &ER = UR.E;
-		auto const &FR = UR.F;
-		auto const iER = inv(ER);
-		auto const F2R = FR.dot(FR);
-		auto const f2R = F2R * sqr(iER);
-		ASSERT_RANGE(0_R, f2R, 1_R);
-		auto const ΔR = 4_R - 3_R * f2R;
-		auto const sqrtΔR = sqrt(4_R - 3_R * f2R);
-		auto const χR = (1_R / 3_R) * (5_R - 2_R * sqrtΔR);
-		auto const iF2R = inv(select(F2R != 0_R, F2R, 1_R));
-		auto const iFR = sqrt(iF2R);
-		auto const βR = 2_R * inv(3_R - χR) * FR[n] * iER;
-		auto const ΠR = 0.5_R * (1_R - χR) * ER[n];
-		auto const μR = FR[n] * iFR;
-		auto const fR = sqrt(f2R);
-		auto const ζR = sqrt((2_R / 3_R) * (ΔR - sqrtΔR) + 2_R * sqr(μR) * (2_R - f2R - sqrtΔR));
-		auto const λmR = (μR * fR - ζR) * inv(sqrtΔR);
-		auto const λpR = (μR * fR + ζR) * inv(sqrtΔR);
-
-		auto const &EL = UL.E;
-		auto const &FL = UL.F;
-		auto const iEL = inv(EL);
-		auto const F2L = FL.dot(FL);
-		auto const f2L = F2L * sqr(iEL);
-		ASSERT_RANGE(0_R, f2L, 1_R);
-		auto const ΔL = 4_R - 3_R * f2L;
-		auto const sqrtΔL = 4_R - 3_R * f2L;
-		auto const χL = (1_R / 3_R) * (5_R - 2_R * sqrtΔL);
-		auto const iF2L = inv(select(F2L != 0_R, F2L, 1_R));
-		auto const iFL = sqrt(iF2L);
-		auto const βL = 2_R * inv(3_R - χL) * FL[n] * iEL;
-		auto const ΠL = 0.5_R * (1_R - χL) * EL;
-		auto const μL = FL[n] * iFL;
-		auto const fL = sqrt(f2L);
-		auto const ζL = sqrt((2_R / 3_R) * (ΔL - sqrtΔL) + 2_R * sqr(μL) * (2_R - f2L - sqrtΔL));
-		auto const λmL = (μL * fL - ζL) * inv(sqrtΔL);
-		auto const λpL = (μL * fL + ζL) * inv(sqrtΔL);
-
-		auto const λR = max(0_R, max(λpL, λpR));
-		auto const λL = min(0_R, min(λmL, λmR));
-
-		auto const AR = λR * ER - FR[n];
-		auto const AL = λL * EL - FL[n];
-		auto const BR = (λR - βR) * FR[n] - ΠR;
-		auto const BL = (λL - βL) * FL[n] - ΠL;
-
-		auto const a = AR * λL - AL * λR;
-		auto const i2a = inv(2_R * a);
-		auto const b = AL - AR + BL * λR - BR * λL;
-		auto const disc = b * b - 2_R * (BR - BL);
-		ASSERT_NONNEGATIVE(disc);
-		auto const sqrtDisc = sqrt(disc);
-		auto const r1 = -(sqrtDisc + b) * i2a;
-		auto const r2 = +(sqrtDisc - b) * i2a;
-		auto const λ0 = select(abs(r1) < abs(r2), r1, r2);
-		ASSERT_RANGE(-1_R, λ0, 1_R);
-
-		auto const flag = λ0 > 0_R;
-		auto const AK = select(flag, AL, AR);
-		auto const BK = select(flag, BL, BR);
-		auto const λK = select(flag, λL, λR);
-		auto const EK = select(flag, EL, ER);
-		auto const FK = select(flag, FL, FR);
-		auto const βK = select(flag, βL, βR);
-		auto const ΠK = select(flag, ΠL, ΠR);
-
-		auto const Π0 = (AK * λ0 - BK) / (1_R - λK * λ0);
-		auto const λKmλ0 = λK - λ0;
-		ASSERT_NONZERO(λKmλ0);
-		auto const iden = inv(λKmλ0);
-		auto const E0 = iden * (EK * (λK - βK) + Π0 * λ0 - ΠK * βK);
-		auto F0 = iden * (FK * (λK - βK));
-		F0[n] += Π0 - ΠK;
-		auto const F20 = F0.dot(F0);
-		auto const iF20 = inv(select(F20 != 0_R, F20, 1_R));
-		auto const β0 = (1_R - 3_R * Π0 / E0) * F0[n] * iF20;
-		RadiationState flux;
-		flux.E = F0[n];
-		flux.F = β0 * F0[n];
-		flux.F += Π0;
-		return std::pair(flux, max(λR, -λL));
+	auto flux(Integer k) const {
+		RadiationState f;
+		auto const [H, β] = primitives();
+		return flux(H, β, k);
+	}
+	friend auto riemannFlux(RadiationState const &uₗ, RadiationState const &uᵣ, Integer n) {
+		FpeGuard fpeGuard{};
+		auto const [Hᵣ, βᵣ] = uᵣ.primitives();
+		auto const [Hₗ, βₗ] = uₗ.primitives();
+		auto const β2ᵣ = βᵣ.dot(βᵣ);
+		auto const β2ₗ = βₗ.dot(βₗ);
+		auto const fₗ = uₗ.flux(Hₗ, βₗ, n);
+		auto const fᵣ = uᵣ.flux(Hᵣ, βᵣ, n);
+		auto const Ξᵣ = sqrt((1_R - β2ᵣ) * (3_R - β2ᵣ - 2_R * sqr(βᵣ[n])));
+		auto const Ξₗ = sqrt((1_R - β2ₗ) * (3_R - β2ₗ - 2_R * sqr(βₗ[n])));
+		auto const λpᵣ = (2_R * βᵣ[n] + Ξᵣ) / (3_R - β2ᵣ);
+		auto const λpₗ = (2_R * βₗ[n] + Ξₗ) / (3_R - β2ₗ);
+		auto const λmᵣ = (2_R * βᵣ[n] - Ξᵣ) / (3_R - β2ᵣ);
+		auto const λmₗ = (2_R * βₗ[n] - Ξₗ) / (3_R - β2ₗ);
+		auto const λᵣ = max(0_R, max(λpᵣ, λpₗ));
+		auto const λₗ = min(0_R, min(λmᵣ, λmₗ));
+		auto const f = (λᵣ * fₗ - λₗ * fᵣ + λᵣ * λₗ * (uᵣ - uₗ)) / (λᵣ - λₗ);
+		return std::pair<RadiationState, Type>(f, max(λᵣ, -λₗ));
+	}
+	auto jacobian(Integer n) const {
+		using Auto = AutoDiff<Type, dimCount + 1>;
+		using AutoVector = Vector<Auto, dimCount>;
+		AutoVector F;
+		Auto const E = Auto::genVar(E_, 0);
+		for (Integer k = 0; k < dimCount; k++) {
+			F[k] = Auto::genVar(F_[k], k + 1);
+		}
+		Auto const F2 = F.dot(F);
+		Auto const E2 = sqr(E);
+		Auto const H = (1_R / 3_R) * (2_R * E + sqrt(4_R * E2 - 3_R * F2));
+		auto const β = F * inv(H);
+		Auto fE = F[n];
+		AutoVector fF = β[n] * H * β;
+		fF[n] += 0.25_R * (1_R - β.dot(β)) * H;
+		Matrix<Type, dimCount + 1> J;
+		for (Integer j = 0; j <= dimCount; j++) {
+			J[0][j] = fE.get(j);
+		}
+		for (Integer j = 0; j < dimCount; j++) {
+			for (Integer k = 0; k <= dimCount; k++) {
+				J[j + 1][k] = fF[j].get(k);
+			}
+		}
+		return J;
+	}
+	void setTemperature(Type T) {
+		setEnergy(4_R * σ * sqr(sqr(T)));
+	}
+	Type getTemperature() const {
+		return root(E_ * inv(4_R * σ), 4_I);
 	}
 	void setEnergy(Type e) {
-		E = e;
+		E_ = e;
 	}
 	void setFlux(Vector<Type, dimCount> const &f) {
-		F = f;
+		F_ = f;
 	}
 	template <typename, Integer>
 	friend struct CoupledState;
 	friend std::ostream &operator<<(std::ostream &os, RadiationState const &u) {
-		os << "(E=" << u.E << ", ";
+		os << "(E=" << u.E_ << ", ";
 		for (Integer i = 0; i < dimCount; i++) {
-			os << "F_" << std::string(1, 'x' + i) << u.F[i] << ", ";
+			os << "F_" << std::string(1, 'x' + i) << u.F_[i] << ", ";
 		}
 		os << ")";
 		return os;
 	}
+	auto flux(Type const &H, Vector<Type, dimCount> const &β, Integer k) const {
+		RadiationState f;
+		f.E_ = F_[k];
+		f.F_ = β[k] * H * β;
+		f.F_[k] += 0.25_R * (1_R - β.dot(β)) * H;
+		return f;
+	}
 
-	Type &E;
-	Vector<Type, dimCount> &F;
+private:
+	auto primitives() const {
+		Type const F2 = F_.dot(F_);
+		Type const E2 = sqr(E_);
+		ASSERT_NONNEGATIVE(E2 - F2);
+		Type const H = (1_R / 3_R) * (2_R * E_ + sqrt(4_R * E2 - 3_R * F2));
+		Vector<Type, dimCount> const β = F_ * inv(H);
+		return std::pair<Type, Vector<Type, dimCount>>(H, β);
+	}
+	Type &E_;
+	Vector<Type, dimCount> &F_;
 };
 
 #endif /* INCLUDE_RADIATIONSTATE_HPP_ */

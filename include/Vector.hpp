@@ -133,6 +133,54 @@ public:
 			static_assert(false);
 		}
 	}
+	constexpr Vector shiftHi(Integer n = 1_I) const {
+		if (n == 0_I) return *this;
+		if (n < 0_I) return shiftLo(-n);
+		Vector s;
+		std::fill_n(s.begin(), n, T(0));
+		std::copy(begin(), end() - n, s.begin() + n);
+		return s;
+	}
+	constexpr Vector shiftLo(Integer n = 1_I) const {
+		if (n == 0_I) return *this;
+		if (n < 0_I) return shiftHi(-n);
+		Vector s;
+		std::copy(begin() + n, end(), s.begin());
+		std::fill_n(s.end() - n, n, T(0));
+		return s;
+	}
+	constexpr auto max() const {
+		using std::max;
+		auto rc = data_[0];
+		for (Integer i = 1; i < D; i++) {
+			rc = max(rc, data_[i]);
+		}
+		return rc;
+	}
+	constexpr auto min() const {
+		using std::min;
+		auto rc = data_[0];
+		for (Integer i = 1; i < D; i++) {
+			rc = min(rc, data_[i]);
+		}
+		return rc;
+	}
+	constexpr friend auto max(Vector const &a, Vector const &b) {
+		using std::max;
+		Vector c;
+		for (Integer i = 0; i < D; i++) {
+			c[i] = max(a[i], b[i]);
+		}
+		return c;
+	}
+	constexpr friend auto min(Vector const &a, Vector const &b) {
+		using std::min;
+		Vector c;
+		for (Integer i = 0; i < D; i++) {
+			c[i] = min(a[i], b[i]);
+		}
+		return c;
+	}
 	constexpr auto data() const {
 		return data_.data();
 	}
@@ -168,7 +216,7 @@ public:
 	}
 	static constexpr auto unit(Integer i) {
 		Vector u{};
-		u[i] = 1_R;
+		u[i] = T(1);
 		return u;
 	}
 	friend constexpr auto operator*(T const &scalar, Vector const &vector) {
@@ -189,26 +237,42 @@ public:
 		std::copy(begin() + B, begin() + E, result.begin());
 		return result;
 	}
-	template <Integer D2>
-	friend constexpr auto concatenate(Vector const &v1, Vector<T, D2> const &v2) {
-		Vector<T, D + D2> result;
-		std::copy(v1.begin(), v1.end(), result.begin());
-		std::copy(v2.begin(), v2.end(), result.begin() + D);
-		return result;
+	template <Integer D2, typename... Args>
+	friend constexpr auto concatenate(Vector const &v1, Vector<T, D2> const &v2, Args &&...args) {
+		if constexpr (sizeof...(Args) == 0) {
+			Vector<T, D + D2> result;
+			std::copy(v1.begin(), v1.end(), result.begin());
+			std::copy(v2.begin(), v2.end(), result.begin() + D);
+			return result;
+		} else {
+			return concatenate(concatenate(v1, v2), std::forward<Args>(args)...);
+		}
 	}
-	friend constexpr auto concatenate(T const &s1, Vector<T, D> const &v2) {
-		Vector<T, D + 1> result;
-		result[0] = s1;
-		std::copy(v2.begin(), v2.end(), result.begin() + 1);
-		return result;
+	template <typename... Args>
+	friend constexpr auto concatenate(T const &s1, Vector const &v2, Args &&...args) {
+		if constexpr (sizeof...(Args) == 0) {
+			Vector<T, D + 1> result;
+			result[0] = s1;
+			std::copy(v2.begin(), v2.end(), result.begin() + 1);
+			return result;
+		} else {
+			return concatenate(concatenate(s1, v2), std::forward<Args>(args)...);
+		}
 	}
-	friend constexpr auto concatenate(Vector<T, D> const &v1, T const &s2) {
-		Vector<T, D + 1> result;
-		result[D] = s2;
-		std::copy(v1.begin(), v1.end(), result.begin());
-		return result;
+	template <typename... Args>
+	friend constexpr auto concatenate(Vector const &v1, T const &s2, Args &&...args) {
+		if constexpr (sizeof...(Args) == 0) {
+			Vector<T, D + 1> result;
+			result[D] = s2;
+			std::copy(v1.begin(), v1.end(), result.begin());
+			return result;
+		} else {
+			return concatenate(concatenate(v1, s2), std::forward<Args>(args)...);
+		}
 	}
-};
+}
+
+;
 
 template <typename T, Integer W>
 std::ostream &operator<<(std::ostream &os, Vector<T, W> const &v) {
